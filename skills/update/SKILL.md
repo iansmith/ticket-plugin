@@ -1,4 +1,9 @@
-# /ticket-update
+---
+description: Mid-session checkpoint to the active ticket's progress.md. Use /tickets:update to snapshot what's been done so far without clearing the active pointer. The ticket stays active. Local-only — never calls JIRA or Linear.
+disable-model-invocation: true
+---
+
+# /tickets:update
 
 Snapshot mid-session progress to the active ticket's tracking files. The ticket stays active — `CURRENT-<PREFIX>` is NOT cleared. Local-only — never calls JIRA or Linear.
 
@@ -59,7 +64,7 @@ Fill every section from conversation context. Don't ask the user.
 ```
 Updated tracking for $TICKET.
 Wrote: <files actually modified>
-Ticket is still active. Pause with /ticket-pause when done.
+Ticket is still active. Pause with /tickets:pause when done.
 ```
 
 ## Rules

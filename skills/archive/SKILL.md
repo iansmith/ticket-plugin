@@ -1,4 +1,9 @@
-# /ticket-archive
+---
+description: Push the active ticket's final task plan back to the ticket as its description and findings as a comment, then archive the local folder. Use /tickets:archive AFTER moving the ticket to a terminal state (Done/Closed/etc.) on the ticket system yourself. Refuses to run otherwise. Auto-detects ticket system.
+disable-model-invocation: true
+---
+
+# /tickets:archive
 
 Push final tracking state to the ticket system, archive the local folder, clear `CURRENT-<PREFIX>`. Only operates on tickets already in a terminal state on the ticket system — the user transitions there first, then runs this. Auto-detects ticket system.
 
@@ -22,7 +27,7 @@ Run two ToolSearches in parallel:
 
 ```
 ToolSearch(query="select:mcp__atlassian__getJiraIssue,mcp__atlassian__editJiraIssue,mcp__atlassian__addCommentToJiraIssue,mcp__atlassian__getAccessibleAtlassianResources", max_results=8)
-ToolSearch(query="linear get_issue update_issue create_comment", max_results=10)
+ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_issue,mcp__linear-server__save_comment", max_results=8)
 ```
 
 Set `$SYSTEM`:
@@ -49,11 +54,11 @@ The specific terminal state doesn't matter; the gate is the category.
 ```
 Cannot archive $TICKET — ticket is in state '<state name>' (<system> category: <category>).
 
-/ticket-archive only operates on tickets already in a terminal state on the ticket system.
+/tickets:archive only operates on tickets already in a terminal state on the ticket system.
 - JIRA: Done category (Done, Closed, Resolved, Won't Do, Canceled).
 - Linear: state type 'completed' or 'canceled'.
 
-Move $TICKET to a terminal state on <system> first, then re-run /ticket-archive.
+Move $TICKET to a terminal state on <system> first, then re-run /tickets:archive.
 ```
 
 Stop. Do not push anything. Do not archive. Do not modify any local files.
@@ -104,8 +109,8 @@ Build the new description (both systems accept markdown, concat directly):
   Skip if findings.md is template-empty.
 
 **Linear:**
-- Call the Linear update-issue tool (likely `mcp__linear-server__update_issue` — discover from Step 1's ToolSearch) with the new description. Do NOT touch state.
-- If `findings.md` has content beyond the template scaffold, call the Linear create-comment tool (likely `mcp__linear-server__create_comment`) with body:
+- Call `mcp__linear-server__save_issue` with the issue id and the new description. Do NOT touch state.
+- If `findings.md` has content beyond the template scaffold, call `mcp__linear-server__save_comment` with the issue id and body:
   ```
   ## Findings (from local tracking)
 
@@ -133,7 +138,7 @@ Local: archived to ~/.claude/ticket-archive/$TICKET/
 ## Rules
 
 - This command does NOT transition the ticket-system state. It refuses unless the ticket is *already* terminal. The user controls the transition; this is the local follow-up.
-- After archive, future `/ticket-start $TICKET` treats it as fresh-start (which would then ask whether to reopen the terminal ticket).
+- After archive, future `/tickets:start $TICKET` treats it as fresh-start (which would then ask whether to reopen the terminal ticket).
 - To resume an archived ticket without going through the reopen prompt: manually `mv ~/.claude/ticket-archive/$TICKET ~/.claude/ticket-active/` first.
 - Failure handling:
   - Ticket-system detection fails: error and stop. No state changed.

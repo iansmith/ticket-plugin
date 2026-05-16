@@ -1,4 +1,9 @@
-# /ticket-start
+---
+description: Start or resume work on a Linear or JIRA ticket. Use /tickets:start <KEY> (e.g. /tickets:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, seeds tracking files), or resumes an existing one. Auto-detects ticket system.
+disable-model-invocation: true
+---
+
+# /tickets:start
 
 Start or resume work on a ticket. Tracking lives at `~/.claude/ticket-active/<TICKET>/`. Auto-detects ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP).
 
@@ -24,7 +29,7 @@ If `.project-prefix` is missing in cwd: stop with `"No .project-prefix in cwd. C
 ## Pre-flight
 
 1. Validate `$ARGUMENTS` matches `^[A-Z]+-\d+$`. If not, ask for a valid ticket key and stop.
-2. Read `~/.claude/ticket-active/CURRENT-$PREFIX`. Call its contents `$ACTIVE` (empty if the file is empty or missing). If `$ACTIVE` is non-empty AND `$ACTIVE != $ARGUMENTS`, inline the body of `/ticket-update` (don't actually invoke it as a slash command) to capture state on `$ACTIVE` before switching. (`/ticket-update` operates on `$ACTIVE` because that's what `CURRENT-$PREFIX` still points to.) Then continue.
+2. Read `~/.claude/ticket-active/CURRENT-$PREFIX`. Call its contents `$ACTIVE` (empty if the file is empty or missing). If `$ACTIVE` is non-empty AND `$ACTIVE != $ARGUMENTS`, inline the body of `/tickets:update` (don't actually invoke it as a slash command) to capture state on `$ACTIVE` before switching. (`/tickets:update` operates on `$ACTIVE` because that's what `CURRENT-$PREFIX` still points to.) Then continue.
 
 Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exists with content) or Fresh-start mode (if it doesn't).
 
@@ -54,13 +59,13 @@ Run two ToolSearches in parallel (single message, two tool calls):
 
 ```
 ToolSearch(query="select:mcp__atlassian__getJiraIssue,mcp__atlassian__getAccessibleAtlassianResources,mcp__atlassian__getTransitionsForJiraIssue,mcp__atlassian__transitionJiraIssue", max_results=8)
-ToolSearch(query="linear get_issue update_issue list_workflow_states", max_results=10)
+ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_issue,mcp__linear-server__list_issue_statuses", max_results=8)
 ```
 
 Set `$SYSTEM`:
 - JIRA tools only → `JIRA`
 - Linear tools only (`mcp__linear-server__*`) → `Linear`
-- Both → ask: `"Both JIRA and Linear MCP are configured this session. Which should /ticket-start use? (jira / linear)"`
+- Both → ask: `"Both JIRA and Linear MCP are configured this session. Which should /tickets:start use? (jira / linear)"`
 - Neither → stop: `"No ticket-system MCP found. Configure Atlassian or Linear MCP and retry."`
 
 ### Step 2 — Fetch the ticket
@@ -82,7 +87,7 @@ Three cases by *category* (JIRA `statusCategory.key`, Linear `state.type`):
 
 **b. Pre-progress** (JIRA `new`; Linear `backlog` / `unstarted`) — transition:
 - *JIRA:* `getTransitionsForJiraIssue` → pick a transition whose target has `statusCategory.key === "indeterminate"`. If multiple, prefer one whose name contains "progress" (case-insensitive); else first. Call `transitionJiraIssue` with that transition id. If no matching transition exists, print `"Couldn't find an In-Progress transition on $ARGUMENTS — transition manually on JIRA if needed."` and continue with seeding.
-- *Linear:* Use the workflow-states tool from Step 1's ToolSearch (likely `mcp__linear-server__list_workflow_states`) to list states for the issue's team. Filter to `type === "started"`. If multiple, prefer one whose name contains "progress"; else first. Call the Linear update-issue tool with `stateId = <chosen state id>`. If no `started`-type state exists, print warning and continue.
+- *Linear:* Call `mcp__linear-server__list_issue_statuses` for the issue's team. Filter to entries with `type === "started"`. If multiple, prefer one whose name contains "progress"; else first. Call `mcp__linear-server__save_issue` with the issue id and `stateId = <chosen state id>`. If no `started`-type state exists, print warning and continue.
 
 **c. Already done** (JIRA `done`; Linear `completed` / `canceled`) — ask before reopening:
 - Print: `"Ticket $ARGUMENTS is in a terminal state ('<state name>'). Start work anyway? This will reopen it to In Progress. (yes / no)"`.
