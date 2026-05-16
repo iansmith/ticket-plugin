@@ -1,9 +1,9 @@
 ---
-description: Snapshot the active ticket's state to its tracking files and clear it as active. Use /tickets:pause when interrupted, before switching to other work. Local-only — never calls JIRA or Linear.
+description: Snapshot the active ticket's state to its tracking files and clear it as active. Use /ticket-plugin:pause when interrupted, before switching to other work. Local-only — never calls JIRA or Linear.
 disable-model-invocation: true
 ---
 
-# /tickets:pause
+# /ticket-plugin:pause
 
 Snapshot the active ticket's state to its tracking files and clear `CURRENT-<PREFIX>`. Local-only — never calls JIRA or Linear.
 
@@ -71,7 +71,7 @@ Fill every section from conversation context. Don't ask the user.
 ```
 Paused $TICKET.
 Captured: <files actually written>
-Resume with: /tickets:start $TICKET
+Resume with: /ticket-plugin:start $TICKET
 ```
 
 ## Rules

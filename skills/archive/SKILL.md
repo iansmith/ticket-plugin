@@ -1,9 +1,9 @@
 ---
-description: Push the active ticket's final task plan back to the ticket as its description and findings as a comment, then archive the local folder. Use /tickets:archive AFTER moving the ticket to a terminal state (Done/Closed/etc.) on the ticket system yourself. Refuses to run otherwise. Auto-detects ticket system.
+description: Push the active ticket's final task plan back to the ticket as its description and findings as a comment, then archive the local folder. Use /ticket-plugin:archive AFTER moving the ticket to a terminal state (Done/Closed/etc.) on the ticket system yourself. Refuses to run otherwise. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
-# /tickets:archive
+# /ticket-plugin:archive
 
 Push final tracking state to the ticket system, archive the local folder, clear `CURRENT-<PREFIX>`. Only operates on tickets already in a terminal state on the ticket system — the user transitions there first, then runs this. Auto-detects ticket system.
 
@@ -54,11 +54,11 @@ The specific terminal state doesn't matter; the gate is the category.
 ```
 Cannot archive $TICKET — ticket is in state '<state name>' (<system> category: <category>).
 
-/tickets:archive only operates on tickets already in a terminal state on the ticket system.
+/ticket-plugin:archive only operates on tickets already in a terminal state on the ticket system.
 - JIRA: Done category (Done, Closed, Resolved, Won't Do, Canceled).
 - Linear: state type 'completed' or 'canceled'.
 
-Move $TICKET to a terminal state on <system> first, then re-run /tickets:archive.
+Move $TICKET to a terminal state on <system> first, then re-run /ticket-plugin:archive.
 ```
 
 Stop. Do not push anything. Do not archive. Do not modify any local files.
@@ -138,7 +138,7 @@ Local: archived to ~/.claude/ticket-archive/$TICKET/
 ## Rules
 
 - This command does NOT transition the ticket-system state. It refuses unless the ticket is *already* terminal. The user controls the transition; this is the local follow-up.
-- After archive, future `/tickets:start $TICKET` treats it as fresh-start (which would then ask whether to reopen the terminal ticket).
+- After archive, future `/ticket-plugin:start $TICKET` treats it as fresh-start (which would then ask whether to reopen the terminal ticket).
 - To resume an archived ticket without going through the reopen prompt: manually `mv ~/.claude/ticket-archive/$TICKET ~/.claude/ticket-active/` first.
 - Failure handling:
   - Ticket-system detection fails: error and stop. No state changed.

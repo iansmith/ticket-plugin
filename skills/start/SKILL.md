@@ -1,9 +1,9 @@
 ---
-description: Start or resume work on a Linear or JIRA ticket. Use /tickets:start <KEY> (e.g. /tickets:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, seeds tracking files), or resumes an existing one. Auto-detects ticket system.
+description: Start or resume work on a Linear or JIRA ticket. Use /ticket-plugin:start <KEY> (e.g. /ticket-plugin:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, seeds tracking files), or resumes an existing one. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
-# /tickets:start
+# /ticket-plugin:start
 
 Start or resume work on a ticket. Tracking lives at `~/.claude/ticket-active/<TICKET>/`. Auto-detects ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP).
 
@@ -29,7 +29,7 @@ If `.project-prefix` is missing in cwd: stop with `"No .project-prefix in cwd. C
 ## Pre-flight
 
 1. Validate `$ARGUMENTS` matches `^[A-Z]+-\d+$`. If not, ask for a valid ticket key and stop.
-2. Read `~/.claude/ticket-active/CURRENT-$PREFIX`. Call its contents `$ACTIVE` (empty if the file is empty or missing). If `$ACTIVE` is non-empty AND `$ACTIVE != $ARGUMENTS`, inline the body of `/tickets:update` (don't actually invoke it as a slash command) to capture state on `$ACTIVE` before switching. (`/tickets:update` operates on `$ACTIVE` because that's what `CURRENT-$PREFIX` still points to.) Then continue.
+2. Read `~/.claude/ticket-active/CURRENT-$PREFIX`. Call its contents `$ACTIVE` (empty if the file is empty or missing). If `$ACTIVE` is non-empty AND `$ACTIVE != $ARGUMENTS`, inline the body of `/ticket-plugin:update` (don't actually invoke it as a slash command) to capture state on `$ACTIVE` before switching. (`/ticket-plugin:update` operates on `$ACTIVE` because that's what `CURRENT-$PREFIX` still points to.) Then continue.
 
 Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exists with content) or Fresh-start mode (if it doesn't).
 
@@ -65,7 +65,7 @@ ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_
 Set `$SYSTEM`:
 - JIRA tools only → `JIRA`
 - Linear tools only (`mcp__linear-server__*`) → `Linear`
-- Both → ask: `"Both JIRA and Linear MCP are configured this session. Which should /tickets:start use? (jira / linear)"`
+- Both → ask: `"Both JIRA and Linear MCP are configured this session. Which should /ticket-plugin:start use? (jira / linear)"`
 - Neither → stop: `"No ticket-system MCP found. Configure Atlassian or Linear MCP and retry."`
 
 ### Step 2 — Fetch the ticket

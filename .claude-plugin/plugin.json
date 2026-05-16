@@ -1,7 +1,7 @@
 {
-  "name": "tickets",
+  "name": "ticket-plugin",
   "version": "1.0.0",
-  "description": "Per-ticket tracking for Linear / JIRA tickets. /tickets:start, /tickets:pause, /tickets:update, and /tickets:archive slash commands keep a durable per-ticket plan + findings + progress log outside the repo, and sync the plan back to the ticket on archive.",
+  "description": "Per-ticket tracking for Linear / JIRA tickets. /ticket-plugin:start, /ticket-plugin:pause, /ticket-plugin:update, and /ticket-plugin:archive slash commands keep a durable per-ticket plan + findings + progress log outside the repo, and sync the plan back to the ticket on archive.",
   "author": {
     "name": "Ian Smith"
   },

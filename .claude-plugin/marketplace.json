@@ -1,13 +1,13 @@
 {
   "name": "ticket-plugin",
-  "description": "Marketplace hosting the `tickets` plugin: per-ticket tracking files for Linear / JIRA tickets, with start/pause/update/archive slash commands.",
+  "description": "Marketplace hosting the `ticket-plugin` plugin: per-ticket tracking files for Linear / JIRA tickets, with start/pause/update/archive slash commands.",
   "owner": {
     "name": "Ian Smith"
   },
   "plugins": [
     {
-      "name": "tickets",
-      "description": "Per-ticket tracking for Linear / JIRA tickets. Slash commands (/tickets:start, /tickets:pause, /tickets:update, /tickets:archive) keep a durable per-ticket plan + findings + progress log outside the repo, and sync the plan back to the ticket on archive.",
+      "name": "ticket-plugin",
+      "description": "Per-ticket tracking for Linear / JIRA tickets. Slash commands (/ticket-plugin:start, /ticket-plugin:pause, /ticket-plugin:update, /ticket-plugin:archive) keep a durable per-ticket plan + findings + progress log outside the repo, and sync the plan back to the ticket on archive.",
       "author": {
         "name": "Ian Smith"
       },

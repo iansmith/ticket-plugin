@@ -9,11 +9,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 ### Added
 
 - Initial public release.
-- Four slash commands invoked under the `tickets` plugin namespace:
-  - `/tickets:start <KEY>` — fresh-start or resume work on a ticket. Fresh-start fetches the ticket, transitions it to **In Progress**, and seeds `task_plan.md`, `findings.md`, `progress.md`. Resume reads the tracking files and prints a summary.
-  - `/tickets:update` — mid-session checkpoint to `progress.md`. The ticket stays active. Local-only.
-  - `/tickets:pause` — snapshot state and clear the active-ticket pointer. Local-only.
-  - `/tickets:archive` — push the final task plan back to the ticket as its description, post `findings.md` as a comment, and archive the local folder. Refuses unless the ticket is already in a terminal state on the ticket system.
+- Four slash commands invoked under the `ticket-plugin` plugin namespace:
+  - `/ticket-plugin:start <KEY>` — fresh-start or resume work on a ticket. Fresh-start fetches the ticket, transitions it to **In Progress**, and seeds `task_plan.md`, `findings.md`, `progress.md`. Resume reads the tracking files and prints a summary.
+  - `/ticket-plugin:update` — mid-session checkpoint to `progress.md`. The ticket stays active. Local-only.
+  - `/ticket-plugin:pause` — snapshot state and clear the active-ticket pointer. Local-only.
+  - `/ticket-plugin:archive` — push the final task plan back to the ticket as its description, post `findings.md` as a comment, and archive the local folder. Refuses unless the ticket is already in a terminal state on the ticket system.
 - Auto-detection of ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP). If both are configured in the same session, the skill asks rather than guessing.
 - Per-project `.project-prefix` discipline: a single-line file in cwd names the ticket prefix (`MAZ`, `PLTF`, `LOU`, etc.) for that project. Skills only operate on tickets matching the cwd's prefix.
 - Per-prefix `CURRENT-<PREFIX>` pointer (`~/.claude/ticket-active/CURRENT-MAZ`, etc.) lets parallel sessions on different projects work without interference.
