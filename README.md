@@ -63,12 +63,38 @@ The skill files reference tool names from the Linear and Atlassian MCPs as they 
 
 ## Install
 
+Two install paths depending on which Anthropic app you use. They produce slightly different slash-command names but the same underlying behavior.
+
+### Claude Code (CLI) — recommended
+
 ```
 /plugin marketplace add iansmith/ticket-plugin
 /plugin install ticket-plugin@ticket-plugin
 ```
 
-(The repo, the marketplace it hosts, and the plugin inside it all share the name `ticket-plugin`. Hence the doubled-up install command.)
+After install, the commands are plugin-namespaced: `/ticket-plugin:start`, `/ticket-plugin:pause`, `/ticket-plugin:update`, `/ticket-plugin:archive`.
+
+(The repo, the marketplace it hosts, and the plugin inside it all share the name `ticket-plugin` — hence the doubled-up install command.)
+
+### Claude Desktop — manual install (no /plugin support yet)
+
+Claude Desktop doesn't currently expose the `/plugin` manager, but it does load standalone slash commands from `~/.claude/commands/`. The installer script drops the four commands there:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/master/install-for-claude-desktop.sh | bash
+```
+
+After install, the commands are **un-namespaced**: `/ticket-start`, `/ticket-pause`, `/ticket-update`, `/ticket-archive`. Restart Claude Desktop if they don't show up in autocomplete.
+
+To pin to a specific version of the plugin:
+
+```bash
+TICKET_PLUGIN_REF=v1.0.0 bash <(curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/v1.0.0/install-for-claude-desktop.sh)
+```
+
+To update later, re-run the installer (it overwrites). To uninstall, remove `~/.claude/commands/ticket-{start,pause,update,archive}.md`.
+
+> **Note on limitations:** the Claude Desktop install path doesn't get auto-updates, doesn't appear in any plugin manager UI, and lives directly in your `~/.claude/commands/` (not in a managed plugin cache). It's a workaround, not the long-term home — when Claude Desktop adds plugin support, switch to the marketplace install above.
 
 ## Setup — `.project-prefix`
 
