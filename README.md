@@ -19,13 +19,47 @@ Tracking files live at `~/.claude/ticket-active/<TICKET>/` while the ticket is a
 
 ## Prerequisites
 
-- **Claude Code** with the plugin manager available (the `/plugin` command).
-- One of:
-  - **Linear MCP** for Linear tickets, *or*
-  - **Atlassian MCP** for JIRA tickets.
+This plugin is a **wrapper around a ticket-system MCP** — it has no built-in Linear or JIRA API client of its own. Before installing, make sure you have:
 
-  The plugin auto-detects which is configured at run-time. If both are configured in one session, it asks which to use.
-- A `.project-prefix` file in each project's working directory (see Setup below).
+1. **Claude Code** with the plugin manager available (the `/plugin` command).
+
+2. **One of these MCPs installed in your Claude Code session.** You need at least one — install whichever matches the ticket system your team uses (or both, if you work across both):
+
+   ### Linear
+
+   For tickets in [Linear](https://linear.app/). Install Anthropic's official Linear plugin from the [Anthropic plugins marketplace](https://github.com/anthropics/claude-plugins-official):
+
+   ```
+   /plugin marketplace add anthropics/claude-plugins-official
+   /plugin install linear@claude-plugins-official
+   ```
+
+   The ticket-plugin's skills expect tools under the `mcp__linear-server__*` namespace.
+
+   ### Atlassian (JIRA)
+
+   For tickets in [JIRA](https://www.atlassian.com/software/jira). Install Anthropic's official Atlassian plugin (which wraps [atlassian/atlassian-mcp-server](https://github.com/atlassian/atlassian-mcp-server)):
+
+   ```
+   /plugin marketplace add anthropics/claude-plugins-official
+   /plugin install atlassian@claude-plugins-official
+   ```
+
+   The ticket-plugin's skills expect tools under the `mcp__atlassian__*` namespace.
+
+   ### Detection behavior
+
+   The plugin auto-detects which MCP is configured at run-time, on every invocation:
+
+   - **Only one configured** → used automatically.
+   - **Both configured in the same session** → the skill asks which to use rather than guessing.
+   - **Neither configured** → the skill stops with a clear error before touching any local state.
+
+3. **A `.project-prefix` file** in each project's working directory (see Setup below).
+
+### Compatibility note
+
+The skill files reference tool names from the Linear and Atlassian MCPs as they ship from the Anthropic marketplace. If you install a different distribution (community fork, older version) and the tool namespace differs, the skill may fail with `"No ticket-system MCP found"` even though an MCP is installed — that means the `mcp__*` prefix isn't one of the two the plugin recognizes. Open an issue with the actual namespace and we'll add the alias.
 
 ## Install
 
