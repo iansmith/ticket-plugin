@@ -76,25 +76,32 @@ After install, the commands are plugin-namespaced: `/ticket-plugin:start`, `/tic
 
 (The repo, the marketplace it hosts, and the plugin inside it all share the name `ticket-plugin` — hence the doubled-up install command.)
 
-### Claude Desktop — manual install (no /plugin support yet)
+### Claude Desktop — manual install (band-aid until Claude Desktop supports plugins)
 
-Claude Desktop doesn't currently expose the `/plugin` manager, but it does load standalone slash commands from `~/.claude/commands/`. The installer script drops the four commands there:
+> **Why this exists as a separate path:** Claude Desktop currently has no `/plugin` manager and no built-in mechanism for installing third-party plugins from a marketplace — only Claude Code (CLI) does. Claude Desktop *does* load standalone slash commands from `~/.claude/commands/`, so this installer is a stopgap that drops the four ticket commands there directly, bypassing the marketplace entirely.
+>
+> This is a band-aid, not a long-term solution. We have no real choice but to do it this way until Claude Desktop ships plugin install support — when that lands, this section becomes obsolete and Claude Desktop users will use the marketplace install above like everyone else. Until then, the trade-offs you accept by using this path:
+>
+> - No auto-updates — you re-run the installer to get new versions.
+> - No appearance in any plugin manager UI — the commands just exist in your `~/.claude/commands/`.
+> - No managed install scope (user vs. project vs. local) — everything is user-scoped, shared across all projects.
+> - The slash commands are un-namespaced (`/ticket-start` instead of `/ticket-plugin:start`) — slightly nicer to type, but inconsistent with the CLI install.
+
+Install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/master/install-for-claude-desktop.sh | bash
 ```
 
-After install, the commands are **un-namespaced**: `/ticket-start`, `/ticket-pause`, `/ticket-update`, `/ticket-archive`. Restart Claude Desktop if they don't show up in autocomplete.
+After install, the commands appear as `/ticket-start`, `/ticket-pause`, `/ticket-update`, `/ticket-archive`. Restart Claude Desktop if they don't show up in autocomplete.
 
-To pin to a specific version of the plugin:
+To pin to a specific tagged version:
 
 ```bash
 TICKET_PLUGIN_REF=v1.0.0 bash <(curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/v1.0.0/install-for-claude-desktop.sh)
 ```
 
 To update later, re-run the installer (it overwrites). To uninstall, remove `~/.claude/commands/ticket-{start,pause,update,archive}.md`.
-
-> **Note on limitations:** the Claude Desktop install path doesn't get auto-updates, doesn't appear in any plugin manager UI, and lives directly in your `~/.claude/commands/` (not in a managed plugin cache). It's a workaround, not the long-term home — when Claude Desktop adds plugin support, switch to the marketplace install above.
 
 ## Setup — `.project-prefix`
 
