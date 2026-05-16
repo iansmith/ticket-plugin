@@ -4,6 +4,16 @@ A Claude Code plugin that keeps a durable per-ticket plan, findings, and progres
 
 The aim: fewer wasted tokens re-explaining context between sessions, and a clean ticket-system record of what was actually done by the time you close the ticket.
 
+## Why this exists
+
+Three concrete problems this plugin solves, with the framing for each.
+
+**Context isolation per ticket.** Each ticket gets its own `task_plan.md`, `findings.md`, and `progress.md` at `~/.claude/ticket-active/<TICKET>/`. When you're working on `MAZ-26`, only `MAZ-26`'s notes load into Claude's context — not the dozen other tickets you've touched recently. That keeps token cost down and stops unrelated discoveries from leaking into your reasoning.
+
+**Parallel project work.** The per-project `.project-prefix` file and per-prefix `CURRENT-<PREFIX>` pointers let you keep a Linear ticket active in one repo and a JIRA ticket active in another at the same time, in separate Claude sessions, without either side accidentally writing to the other's state. `cd`-ing into a repo automatically scopes the plugin to that project's prefix.
+
+**Durable record for the next reader.** When you `/ticket-plugin:archive` a completed ticket, the final task plan is pushed back to the ticket as its new description (with the original description preserved as an appendix section), and the findings are posted as a comment. So the person who originally filed the ticket — or whoever comes back to it months later trying to understand what shipped — sees a real account of what was actually done, not just a title and a merged PR diff.
+
 ## What it does
 
 Four slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
@@ -190,6 +200,10 @@ A few decisions worth knowing about:
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Privacy
+
+This plugin collects nothing about you or your usage — no telemetry, no analytics, no remote endpoints owned by the author. See [PRIVACY.md](PRIVACY.md) for the full statement, including a transparency note about what other tools (the Claude API, the Linear / Atlassian MCPs) your slash-command invocations naturally hit.
 
 ## Author
 
