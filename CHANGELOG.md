@@ -4,6 +4,13 @@ All notable changes to this plugin will be documented in this file.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-05-19
+
+### Changed
+
+- `plugin.json` polish for marketplace submission. Added five optional manifest fields recommended by Anthropic's plugin schema: `$schema` (JSON schema URL for editor autocomplete), `displayName` (human-readable name shown in `/plugin` picker — set to `"Ticket Plugin"`), `repository` (source URL — separate slot in the manager UI from `homepage`), `license` (declared as `"MIT"`, matching the LICENSE file), and `keywords` (`["linear", "jira", "ticketing", "productivity", "tdd", "code-review", "agents"]` for discoverability). Mirrored the polished description into `marketplace.json` so self-hosted-marketplace consumers see the same text.
+- No functional changes. Skill behavior, slash command set, install path, and tracking-file format are identical to v1.1.0.
+
 ## [1.1.0] — 2026-05-16
 
 ### Added
