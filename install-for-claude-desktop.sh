@@ -22,7 +22,7 @@ set -euo pipefail
 REPO="iansmith/ticket-plugin"
 REF="${TICKET_PLUGIN_REF:-master}"
 DEST="$HOME/.claude/commands"
-SKILLS=(start pause update archive merge)
+SKILLS=(start pause update archive pr merge)
 
 echo "Installing ticket-plugin commands from $REPO@$REF..."
 mkdir -p "$DEST"
@@ -41,18 +41,20 @@ for skill in "${SKILLS[@]}"; do
           -e 's|/ticket-plugin:pause|/ticket-pause|g' \
           -e 's|/ticket-plugin:update|/ticket-update|g' \
           -e 's|/ticket-plugin:archive|/ticket-archive|g' \
+          -e 's|/ticket-plugin:pr|/ticket-pr|g' \
           -e 's|/ticket-plugin:merge|/ticket-merge|g' \
     > "$dst"
 done
 
 cat <<EOF
 
-Installed 5 commands to $DEST:
+Installed 6 commands to $DEST:
 
   /ticket-start <KEY>     start or resume work on a ticket
   /ticket-pause           pause the currently active ticket
   /ticket-update          mid-session checkpoint to progress.md
   /ticket-archive         archive a ticket already moved to Done on Linear/JIRA
+  /ticket-pr              open a PR: simplify + commit + push + CodeRabbit poll
   /ticket-merge           ship it: merge PR + transition Done + archive (one step)
 
 Restart Claude Desktop if the commands don't appear in autocomplete.
@@ -65,5 +67,5 @@ This plugin requires either the Linear or Atlassian MCP installed.
 See https://github.com/$REPO#prerequisites for details.
 
 To uninstall later:
-  rm $DEST/ticket-{start,pause,update,archive,merge}.md
+  rm $DEST/ticket-{start,pause,update,archive,pr,merge}.md
 EOF

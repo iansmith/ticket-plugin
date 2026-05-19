@@ -16,13 +16,14 @@ Three concrete problems this plugin solves, with the framing for each.
 
 ## What it does
 
-Five slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
+Six slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
 
 | Command | What it does | Touches ticket system? |
 |---|---|---|
 | `/ticket-plugin:start <KEY>` | Fresh-start: fetch the ticket, transition it to **In Progress**, seed `task_plan.md`, `findings.md`, `progress.md`. Resume: read tracking files, print summary, append a Session header. | Yes (fresh-start only) |
 | `/ticket-plugin:update` | Snapshot mid-session progress to `progress.md`. The ticket stays active. Local-only. | No |
 | `/ticket-plugin:pause` | Snapshot state and clear the active-ticket pointer. Local-only. | No |
+| `/ticket-plugin:pr` | Open a pull request for the active ticket's branch. Runs Claude Code's `simplify` skill on uncommitted changes first, then generates a ticket-anchored commit message, pushes, opens the PR via GitHub MCP or `gh` CLI, triggers CodeRabbit if the base isn't the repo default, polls for CodeRabbit feedback up to 15 minutes, and categorizes the suggestions (🔴 should fix / 🟡 could fix / ⚪ skip) for action. Never auto-applies suggestions. | Indirectly (PR is on GitHub) |
 | `/ticket-plugin:archive` | Push final task plan back to the ticket as its description, post `findings.md` as a comment, and move the local folder to archive. Requires the ticket to **already** be in a terminal state on the ticket system — the user transitions, this command syncs. | Yes |
 | `/ticket-plugin:merge` | End-to-end ship-it: merge the PR via `gh pr merge`, transition the ticket to Done, delete the merged branch, and archive the local tracking dir. Confirms once before any destructive remote operation. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. | Yes |
 
@@ -147,19 +148,24 @@ $ /ticket-plugin:pause                       # interrupted; capture state, clear
 $ /ticket-plugin:start MAZ-26                # resume: reads tracking files, prints summary, re-activates
 
 # ... finish the work ...
-# (transition MAZ-26 to Done on Linear yourself)
+# Open a PR for review (commits uncommitted work, pushes, opens the PR,
+# polls CodeRabbit, categorizes the review):
+$ /ticket-plugin:pr
 
-$ /ticket-plugin:archive                     # pushes task_plan → ticket description, findings → comment, archives locally
-```
+# ... iterate on review feedback ...
 
-Alternatively, if your work landed via a GitHub PR, the **ship-it** path collapses the last three steps into one:
-
-```
-# After the PR is review-approved and CI is green:
+# When the PR is approved and CI is green, ship it:
 $ /ticket-plugin:merge                       # merges PR + transitions ticket to Done + deletes branch + archives locally
 ```
 
-This is the same end-state as `transition manually → /ticket-plugin:archive`, just with the PR merge and branch cleanup folded in. It confirms once before doing any of the irreversible work and refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts.
+The `:merge` command rolls "transition the ticket to Done + `/ticket-plugin:archive`" together with the GitHub PR merge and branch cleanup. If you'd rather drive each step yourself, the manual equivalent is:
+
+```
+# ... finish the work, merge the PR yourself, transition the ticket to Done on Linear/JIRA yourself ...
+$ /ticket-plugin:archive                     # pushes task_plan → ticket description, findings → comment, archives locally
+```
+
+`:merge` is the same end-state as the manual flow, just with one confirmation prompt rather than three. It confirms once before doing any of the irreversible work and refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts.
 
 ### Switching tickets within the same project
 
