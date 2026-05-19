@@ -123,7 +123,7 @@ Show the full plan and get explicit approval. This is the only confirmation prom
 > 1. **Merge** PR #$PR (`$BRANCH` → `$baseRefName`) with strategy `$STRATEGY` via `gh pr merge`. (`--delete-branch` flag included; GitHub auto-deletes the remote branch if the merge succeeds.)
 > 2. **Advance** $TICKET on $SYSTEM by one state: `<current state name>` → `<computed next state name>`. (Or `"<current> — already terminal, no transition"` / `"<current> — no forward transition available on this workflow"` if applicable.) This is one step forward, NOT auto-Done. If the workflow's next state isn't what you expected, say `no` and handle it manually.
 > 3. **Switch to `$baseRefName`, pull the merge from origin, push it to any other remotes** (mirrors / forks / upstream — if `git remote` lists anything besides `origin`), then **delete the local branch** `$BRANCH` (`gh pr view` already confirmed `state: MERGED`).
-> 4. **Archive** local tracking (inlines the `/ticket-plugin:archive` body — pushes final task plan and findings comment to $SYSTEM, then `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET`, clear `CURRENT-$PREFIX`).
+> 4. **Archive** local tracking (inlines the `/ticket-plugin:archive` body — pushes final task plan as the description; if `task_plan.md` has a Definition of Done section, posts a timestamped DoD-confirmation comment walking each item with evidence from the merge/tests/progress; posts findings.md as a separate comment if non-empty; then `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET`, clear `CURRENT-$PREFIX`).
 >
 > <soft-warning summary if any: BLOCKED / BEHIND / failing checks / no review approval>
 >
@@ -212,9 +212,10 @@ Execute its Steps 4 (push) and 5 (archive) directly:
 
 1. Build the new description: body of `task_plan.md` + `\n\n---\n\n## Original description (preserved)\n\n` + the existing description fetched in Step 2.
 2. Update the ticket description: JIRA `mcp__atlassian__editJiraIssue` / Linear `mcp__linear-server__save_issue` with the new description. Do NOT touch state again.
-3. If `findings.md` has content beyond the template scaffold (any `## ` heading or prose past the placeholder), post it as a comment titled `## Findings (from local tracking)`. JIRA `mcp__atlassian__addCommentToJiraIssue` / Linear `mcp__linear-server__save_comment`.
-4. `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET` (rename to `~/.claude/ticket-archive/$TICKET-<timestamp>` on collision).
-5. `: > ~/.claude/ticket-active/CURRENT-$PREFIX`.
+3. **DoD-confirmation comment.** If `task_plan.md` has a `## Definition of Done` section (drafted by `/ticket-plugin:plan`), post a separate timestamped comment walking each DoD item with evidence — same format as `/ticket-plugin:archive` Step 4b. The merge context gives you strong evidence sources to cite per item: the merge commit `$MERGE_COMMIT`, the merged PR `$PR_URL`, the test results captured by the most recent `/ticket-plugin:pr` invocation, and any `## Update` entries in `progress.md` that documented verification. Use ✅ when evidence supports the item; use ⚠️ with a plain-language reason when it doesn't. Never fake a confirmation — surface the gap. Skip the comment entirely if `task_plan.md` has no `## Definition of Done` section.
+4. If `findings.md` has content beyond the template scaffold (any `## ` heading or prose past the placeholder), post it as a separate comment titled `## Findings (from local tracking)`. JIRA `mcp__atlassian__addCommentToJiraIssue` / Linear `mcp__linear-server__save_comment`.
+5. `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET` (rename to `~/.claude/ticket-archive/$TICKET-<timestamp>` on collision).
+6. `: > ~/.claude/ticket-active/CURRENT-$PREFIX`.
 
 `progress.md` is intentionally NOT pushed.
 
@@ -225,6 +226,7 @@ Shipped $TICKET.
 
 PR:      #$PR merged ($STRATEGY, $MERGE_COMMIT) into $baseRefName
 Ticket:  $TICKET advanced from '<old state>' to '<new state>' on $SYSTEM ( or "already terminal — no transition" / "no forward transition available" )
+DoD:     <"confirmed — all N items ✅" | "confirmed with K warnings — N-K ✅, K ⚠️" | "no DoD section in task_plan.md, comment skipped">
 Remotes: $baseRefName pushed to <list of non-origin remotes> ( or "origin only" )
 Branch:  local $BRANCH deleted; remote feature branch deleted by gh pr merge
 Local:   archived to ~/.claude/ticket-archive/$TICKET/

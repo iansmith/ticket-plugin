@@ -4,6 +4,17 @@ All notable changes to this plugin will be documented in this file.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Client-readable Definition of Done.** `/ticket-plugin:plan` Step 2a now drafts a `## Definition of Done` section in `task_plan.md` above the technical Plan. The DoD uses plain language and observable outcomes (not test names or code symbols), aimed at the non-engineer who filed the ticket. Items describe *what the client will observe* and include a `How to verify:` line a non-engineer could execute. The DoD ends up at the top of the ticket description on archive — it's the first thing the client sees when reading the closed ticket.
+- **DoD-confirmation comment on archive.** `/ticket-plugin:archive` (and `/ticket-plugin:merge`, which inlines `:archive`'s body) now posts a separate timestamped comment to the ticket after updating the description. The comment walks each DoD item from `task_plan.md` and confirms it with evidence (Phase 0 red tests that turned green, commits implementing the work, the merged PR, manual verification notes captured in `progress.md`). Each item is marked ✅ if evidence supports it, ⚠️ with a plain-language reason if it doesn't. Never fakes a confirmation — surfaces the gap honestly when evidence is missing. The result: a ticket on close has scope agreement at the top of the description (the DoD), engineering artifacts below (the plan, original description), a timestamped sign-off comment (the DoD confirmation), and an investigation comment (findings). Skipped entirely if `task_plan.md` has no DoD section.
+
+### Notes
+
+- This release is currently unversioned in `plugin.json` (still `1.2.0`) so Ian can exercise the new behavior locally before tagging. When ready to ship, version bumps to `1.3.0` and this section becomes the v1.3.0 release.
+
 ## [1.2.0] — 2026-05-19
 
 ### Changed
