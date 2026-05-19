@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "ticket-plugin",
-      "description": "Per-ticket tracking for Linear / JIRA tickets. Slash commands (/ticket-plugin:start, /ticket-plugin:pause, /ticket-plugin:update, /ticket-plugin:archive) keep a durable per-ticket plan + findings + progress log outside the repo, and sync the plan back to the ticket on archive.",
+      "description": "Per-ticket tracking for Linear / JIRA tickets, with an end-to-end ship-it command. Slash commands /ticket-plugin:start, /ticket-plugin:pause, /ticket-plugin:update, /ticket-plugin:archive, and /ticket-plugin:merge keep a durable per-ticket plan + findings + progress log outside the repo, sync the plan back to the ticket on close, and (via :merge) wrap merge-PR + transition-to-Done + archive in one confirmed step.",
       "author": {
         "name": "Ian Smith"
       },

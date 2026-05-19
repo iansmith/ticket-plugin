@@ -16,7 +16,7 @@ Three concrete problems this plugin solves, with the framing for each.
 
 ## What it does
 
-Four slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
+Five slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
 
 | Command | What it does | Touches ticket system? |
 |---|---|---|
@@ -24,6 +24,7 @@ Four slash commands form a complete loop around a ticket. After install, they li
 | `/ticket-plugin:update` | Snapshot mid-session progress to `progress.md`. The ticket stays active. Local-only. | No |
 | `/ticket-plugin:pause` | Snapshot state and clear the active-ticket pointer. Local-only. | No |
 | `/ticket-plugin:archive` | Push final task plan back to the ticket as its description, post `findings.md` as a comment, and move the local folder to archive. Requires the ticket to **already** be in a terminal state on the ticket system — the user transitions, this command syncs. | Yes |
+| `/ticket-plugin:merge` | End-to-end ship-it: merge the PR via `gh pr merge`, transition the ticket to Done, delete the merged branch, and archive the local tracking dir. Confirms once before any destructive remote operation. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. | Yes |
 
 Tracking files live at `~/.claude/ticket-active/<TICKET>/` while the ticket is active, then move to `~/.claude/ticket-archive/<TICKET>/`. They survive `cd` between repos.
 
@@ -150,6 +151,15 @@ $ /ticket-plugin:start MAZ-26                # resume: reads tracking files, pri
 
 $ /ticket-plugin:archive                     # pushes task_plan → ticket description, findings → comment, archives locally
 ```
+
+Alternatively, if your work landed via a GitHub PR, the **ship-it** path collapses the last three steps into one:
+
+```
+# After the PR is review-approved and CI is green:
+$ /ticket-plugin:merge                       # merges PR + transitions ticket to Done + deletes branch + archives locally
+```
+
+This is the same end-state as `transition manually → /ticket-plugin:archive`, just with the PR merge and branch cleanup folded in. It confirms once before doing any of the irreversible work and refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts.
 
 ### Switching tickets within the same project
 
