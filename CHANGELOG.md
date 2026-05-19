@@ -4,6 +4,26 @@ All notable changes to this plugin will be documented in this file.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-05-19
+
+### Changed
+
+- **`/ticket-plugin:merge` no longer auto-transitions tickets to Done.** The skill now advances the ticket by **one state** in the workflow, respecting intermediate states like "In Review" or "Awaiting QA" that many teams put between In Progress and Done. The previous behavior (jump straight to a Done-category state) skipped those gates, which is wrong for most real teams. This is a behavior change to the default flow — hence the minor version bump rather than a patch.
+- The Step 3 confirmation prompt now shows the **specific computed next state** (e.g. `"In Progress → In Review"`) rather than the vague `"to a terminal Done state"`. If the proposed target isn't what the user expected, they can say `no` and handle the transition manually.
+- Computation logic in Step 2 (was: in Step 5):
+  - **JIRA:** `getTransitionsForJiraIssue` → exclude negative-completion names (`won't do`, `cancel`, `reject`, `abandon`, `invalid`, `duplicate`) → prefer transitions that stay in the **current** `statusCategory.key` (sideways "In Progress" → "In Review" preferred over the category jump to "Done") → within those, prefer name match `/review|qa|verify|test|pending|ready|merged|shipped/i`. Only falls back to a category-advancing transition (and then preferred-Done picking) when no same-category target exists.
+  - **Linear:** `list_issue_statuses` → filter out `type === "canceled"` and negative names → prefer states with the **same** `type` and a higher `position` (the immediate next slot in the same bucket) → if none, advance type to `completed` with the lowest position. Same name preferences as JIRA.
+- The semantics also clean up a related asymmetry: `/ticket-plugin:archive` continues to refuse non-terminal tickets, but `/ticket-plugin:merge` (which inlines parts of `:archive`'s push + local-mv logic, NOT the terminal gate) may legitimately leave the ticket in a non-terminal state on the ticket system while still archiving the local tracking dir. The local archive captures "dev's work is done"; the ticket's final state is whatever the team's workflow + QA process produces.
+
+### Also changed
+
+- Moved the repo-maintainer release checklist from `CLAUDE.md` at the root to `.claude/rules/repo-conventions.md`. The plugin validator warns about `CLAUDE.md` at a plugin root (it assumes the file is trying to ship context to plugin users, which doesn't work). Our use case is the opposite — repo conventions for maintainers — and `.claude/rules/` is the right home for that. Claude Code auto-loads both `CLAUDE.md` and `.claude/rules/*.md` at session start, so the behavior is identical; only the file location changed.
+
+### Notes
+
+- If your team's workflow happens to have no intermediate state between In Progress and Done, advance-one IS Done — because that's what your workflow's "next" actually is. The skill doesn't enforce intermediate states; it just doesn't assume them.
+- README updated: the workflow diagram, the `:merge` command description, the `:merge` vs `:archive` distinction, and the fictional scenario walkthrough all reflect the new advance-one semantics.
+
 ## [1.1.2] — 2026-05-19
 
 ### Fixed

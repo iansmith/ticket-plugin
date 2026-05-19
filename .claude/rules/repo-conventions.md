@@ -1,6 +1,8 @@
-# ticket-plugin — project instructions
+# ticket-plugin — repo conventions
 
-This file is loaded by Claude Code (and Claude Desktop) when working inside this repo. Treat the rules below as binding for any session iterating on the plugin.
+This file is loaded by Claude Code (and Claude Desktop) when working inside this repo via the `.claude/rules/` mechanism (any `*.md` file in there gets pulled into context at session start, same way `CLAUDE.md` would at the repo root). Treat the rules below as binding for any session iterating on the plugin.
+
+(Originally lived at `CLAUDE.md` at the repo root, but the Claude Code plugin validator warns about `CLAUDE.md` at a plugin root — it assumes that file is trying to ship context to *plugin users*, which doesn't work. Our use case is the opposite — repo conventions for *maintainers*. `.claude/rules/` is the right home for that, and avoids the false-positive warning.)
 
 ## Release checklist — MANDATORY before pushing a new version tag
 

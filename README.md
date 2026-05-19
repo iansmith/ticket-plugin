@@ -41,7 +41,8 @@ The seven slash commands are the loop:
             ▼
    /ticket-plugin:merge
             │  ┌──────────────────────────────────────────────┐
-            │  │  gh pr merge → transition ticket Done →      │
+            │  │  gh pr merge → advance ticket one state      │
+            │  │  (e.g. In Progress → In Review, not Done) → │
             │  │  push baseRef to all remotes → archive local │
             │  └──────────────────────────────────────────────┘
             ▼
@@ -230,7 +231,9 @@ Refuses to run if the ticket isn't already in a terminal state. The user control
 /ticket-plugin:merge --pr 123 --strategy squash
 ```
 
-When the PR is review-approved and CI is green: merges the PR via `gh pr merge` (default strategy: squash), transitions the ticket to a Done-category state, propagates the merged-onto branch to all configured remotes, deletes the local feature branch, and inlines `/ticket-plugin:archive`'s body to push the final task plan + findings comment to the ticket.
+When the PR is review-approved and CI is green: merges the PR via `gh pr merge` (default strategy: squash), **advances the ticket by one state in its workflow** (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumping to Done so the team's review / QA gates aren't skipped), propagates the merged-onto branch to all configured remotes, deletes the local feature branch, and pushes the final task plan + findings comment to the ticket then archives the local tracking dir. The proposed next state is shown in the confirmation prompt before anything irreversible happens.
+
+> **`:merge` vs `:archive`** — `/ticket-plugin:archive` refuses unless the ticket is already in a terminal state on the ticket system (the user transitions, the command syncs). `/ticket-plugin:merge` advances the state itself by one step and may legitimately leave the ticket in a non-terminal state (e.g. "In Review") if that's the workflow's next state — but it still archives the local tracking dir because the local work is done from the dev's perspective. QA / deploy then picks up the ticket from In Review on the ticket system without touching the local tracking.
 
 Confirms once before any destructive remote action. Refuses safely on dirty trees, unpushed commits, draft PRs, merge conflicts, or mismatched head refs. Never uses `gh pr merge --admin` to bypass branch protection.
 
@@ -525,7 +528,9 @@ The team reviewer ACKs. CI is green. Time to merge:
 
 About to merge MAZ-99 and ship it:
   1. Merge PR #247 (maz-99-renewal-fix → master) with strategy squash
-  2. Transition MAZ-99 on Linear from In Progress to Done
+  2. Advance MAZ-99 on Linear by one state: In Progress → In Review
+     (one step forward, NOT auto-Done — your team's QA / deploy gate
+     between In Review and Done is preserved. Say no if this isn't right.)
   3. Switch to master, pull, push master to any non-origin remotes, delete local maz-99-renewal-fix
   4. Archive local tracking (push task_plan + findings comment to MAZ-99, mv tracking dir)
 
@@ -534,16 +539,16 @@ Proceed? (yes / no / merge-only)
 > yes
 
 Merged PR #247 (squash, abc1234) into master.
-Transitioned MAZ-99 to Done on Linear.
+Advanced MAZ-99 on Linear from "In Progress" to "In Review".
 Pushed master to: origin (already up to date via gh pr merge), mirror (success).
 Deleted local maz-99-renewal-fix.
 Pushed task plan to MAZ-99 as description; posted findings as a comment.
 Archived ~/.claude/ticket-active/MAZ-99/ → ~/.claude/ticket-archive/MAZ-99/.
 
-Shipped MAZ-99.
+Shipped MAZ-99 to In Review.
 ```
 
-The Linear ticket MAZ-99 now has:
+Now MAZ-99 sits in "In Review" on Linear. QA picks it up, verifies the fix against the renewed-endpoint scenario, and moves it to "Done" themselves. The Linear ticket has:
 - The completed task plan as its description (with the original description preserved as an appendix)
 - A "Findings" comment containing the investigation notes
 - State: Done
