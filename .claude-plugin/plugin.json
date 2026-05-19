@@ -1,7 +1,7 @@
 {
   "name": "ticket-plugin",
   "version": "1.1.0",
-  "description": "Per-ticket tracking for Linear / JIRA tickets, with end-to-end PR and ship-it commands. Six slash commands — /ticket-plugin:start, :pause, :update, :archive, :pr, and :merge — keep a durable per-ticket plan + findings + progress log outside the repo, sync the plan back to the ticket on close, open a PR with a pre-commit simplify pass and CodeRabbit review polling, and wrap merge-PR + transition-to-Done + archive into one confirmed step.",
+  "description": "Per-ticket tracking for Linear / JIRA tickets, with deep planning, PR creation, and ship-it commands. Seven slash commands — /ticket-plugin:start, :plan, :update, :pause, :archive, :pr, and :merge — keep a durable per-ticket plan + findings + progress log outside the repo; investigate the codebase and produce a parallelism-aware plan with optional subagent fanout in git worktrees; open a PR with a pre-commit simplify pass and CodeRabbit review polling; and wrap merge-PR + transition-to-Done + archive into one confirmed step.",
   "author": {
     "name": "Ian Smith"
   },

@@ -16,11 +16,12 @@ Three concrete problems this plugin solves, with the framing for each.
 
 ## What it does
 
-Six slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
+Seven slash commands form a complete loop around a ticket. After install, they live under the plugin's namespace (`/ticket-plugin:<name>`):
 
 | Command | What it does | Touches ticket system? |
 |---|---|---|
 | `/ticket-plugin:start <KEY>` | Fresh-start: fetch the ticket, transition it to **In Progress**, seed `task_plan.md`, `findings.md`, `progress.md`. Resume: read tracking files, print summary, append a Session header. | Yes (fresh-start only) |
+| `/ticket-plugin:plan [constraint]` | Investigate the codebase against the ticket's outcome (scoped by the optional textual constraint), then write a thorough, parallelism-aware plan into `task_plan.md`. If 2+ items are parallel-safe, optionally fan them out across subagents in git worktrees and orchestrate them: monitor every 15 minutes, auto-stop hard-stuck agents (60+ min no commits AND repeating errors), then offer auto-merge with confirmation. Plan is always saved before any agent launches, so an abort leaves you with the plan. | No |
 | `/ticket-plugin:update` | Snapshot mid-session progress to `progress.md`. The ticket stays active. Local-only. | No |
 | `/ticket-plugin:pause` | Snapshot state and clear the active-ticket pointer. Local-only. | No |
 | `/ticket-plugin:pr` | Open a pull request for the active ticket's branch. Runs Claude Code's `simplify` skill on uncommitted changes first, then generates a ticket-anchored commit message, pushes, opens the PR via GitHub MCP or `gh` CLI, triggers CodeRabbit if the base isn't the repo default, polls for CodeRabbit feedback up to 15 minutes, and categorizes the suggestions (🔴 should fix / 🟡 could fix / ⚪ skip) for action. Never auto-applies suggestions. | Indirectly (PR is on GitHub) |
@@ -134,6 +135,10 @@ This also means you can have multiple tickets active at the same time across dif
 ```
 $ cd ~/mazzy                          # has .project-prefix containing MAZ
 $ /ticket-plugin:start MAZ-26                # fresh-start: transitions to In Progress, seeds tracking dir
+
+# Optional: build a thorough plan (investigate the codebase, mark parallel work,
+# optionally fan it out across subagents in worktrees):
+$ /ticket-plugin:plan focus on the database layer only
 
 # ... work happens ...
 
