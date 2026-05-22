@@ -1,11 +1,17 @@
 ---
-description: Start or resume work on a Linear or JIRA ticket. Use /ticket-plugin:start <KEY> (e.g. /ticket-plugin:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, seeds tracking files), or resumes an existing one. Auto-detects ticket system.
+description: Start or resume work on a Linear or JIRA ticket. Use /ticket-plugin:start <KEY> (e.g. /ticket-plugin:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, asks for a Conventional-Commits-style branch type and creates a feature branch like fix/MAZ-26 or feat/MAZ-26 — with a heuristic suggestion from labels/title and the choice between branching off the default branch vs the current branch when cwd is on a feature branch, plus a "skip" option to opt out of branch creation entirely — then seeds tracking files), or resumes an existing one. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
 # /ticket-plugin:start
 
-Start or resume work on a ticket. Tracking lives at `~/.claude/ticket-active/<TICKET>/`. Auto-detects ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP).
+Start or resume work on a ticket.
+
+**On fresh-start:** transitions the ticket to In Progress, creates a feature branch named `<type>/<TICKET-ID>` (e.g. `fix/MAZ-99`, `feat/MAZ-99`) — `<type>` is a Conventional-Commits-style prefix chosen interactively, with a heuristic suggestion when one can be inferred from the ticket's labels or title; a `skip` option opts out of branch creation entirely — and seeds tracking files at `~/.claude/ticket-active/<TICKET>/`. If cwd is on a feature branch (not the repo default), the skill warns and asks whether to branch off the default branch or off the current branch.
+
+**On resume:** reads the tracking dir, prints a summary, appends a session header. No ticket-system call, no git.
+
+Auto-detects ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP).
 
 ## Project scope (every ticket skill follows this rule)
 
@@ -94,7 +100,98 @@ Three cases by *category* (JIRA `statusCategory.key`, Linear `state.type`):
 - `no` → stop. Don't create the tracking dir.
 - `yes` → transition as in case (b).
 
-### Step 4 — Seed the tracking dir
+### Step 4 — Decide branch type and base ref
+
+The branch will be named `<type>/$ARGUMENTS` (e.g. `fix/MAZ-99`, `feat/MAZ-99`). `<type>` is a Conventional-Commits-style prefix: `fix`, `feat`, `chore`, `docs`, `refactor`, `perf`, `test`, `ci`, `build`, `deploy`, `revert`. Custom values are allowed if they pass `git check-ref-format --branch "<type>/$ARGUMENTS"`.
+
+#### 4a. Suggest a default type from the ticket data
+
+Try to infer `<type>` from the ticket's labels and title (case-insensitive). First label match wins over title match. If multiple labels match different types, prefer in this order: `fix > feat > refactor > perf > docs > chore > test`.
+
+| Signal | Match → suggest |
+|---|---|
+| Label | `bug`, `regression`, `hotfix`, `defect` → `fix` |
+| Label | `feature`, `enhancement`, `story` → `feat` |
+| Label | `chore`, `maintenance`, `cleanup`, `tech-debt`, `tech debt` → `chore` |
+| Label | `docs`, `documentation` → `docs` |
+| Label | `refactor`, `refactoring` → `refactor` |
+| Label | `perf`, `performance` → `perf` |
+| Label | `test`, `testing`, `qa` → `test` |
+| Title | starts with `Fix `, `Bug:`, `Regression:`, or contains ` bug ` → `fix` |
+| Title | starts with `Add `, `Implement `, `Build `, `Create `, `New ` → `feat` |
+| Title | starts with `Refactor `, `Cleanup `, `Rename ` → `refactor` |
+| Title | contains `documentation`, `README`, or `docs` (whole-word) → `docs` |
+
+If no signal matches, no suggestion.
+
+#### 4b. Ask the user for the type
+
+**With a suggestion:**
+
+```
+Branch type for $ARGUMENTS?
+  Suggested: <type>  (from label '<label-name>' / title heuristic)
+  Choices:   fix | feat | chore | docs | refactor | perf | test | ci | build | deploy | revert | <custom> | skip
+```
+
+**Without a suggestion:**
+
+```
+Branch type for $ARGUMENTS? (no signal from labels or title)
+  Choices: fix | feat | chore | docs | refactor | perf | test | ci | build | deploy | revert | <custom> | skip
+```
+
+User responses:
+- One of the listed types → use it.
+- A custom string → validate via `git check-ref-format --branch "<type>/$ARGUMENTS"`. On failure, refuse with `"Invalid branch type — '<input>' produces an invalid git branch name."` and re-ask.
+- `skip` → set `$NEW_BRANCH = null`. Step 5 becomes a no-op; the user is opting out of branch creation entirely and will manage git themselves.
+
+Set `$TYPE` from the response, then `$NEW_BRANCH = "$TYPE/$ARGUMENTS"`.
+
+#### 4c. Determine the base ref
+
+Skip this entire sub-step if `$NEW_BRANCH == null` (user picked `skip` in 4b).
+
+- `$CURRENT_BRANCH = git branch --show-current`.
+- `$DEFAULT_BRANCH = gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`. On `gh` failure, fall back to `git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'`. If that also fails, ask: `"Couldn't auto-detect the default branch. Enter the default branch name (e.g. main, master, trunk):"`.
+
+**If `$CURRENT_BRANCH == $DEFAULT_BRANCH`** (cwd is on the default branch) — no prompt. Set `$BASE_REF = "origin/$DEFAULT_BRANCH"` (always-fresh remote ref, avoids stacking on a stale local copy).
+
+**If `$CURRENT_BRANCH != $DEFAULT_BRANCH`** (cwd is on a feature branch) — warn and ask:
+
+```
+You're currently on '$CURRENT_BRANCH', not '$DEFAULT_BRANCH'.
+<if working tree is dirty:>     Working tree has uncommitted changes — they'll be carried onto the new branch either way.
+<if $CURRENT_BRANCH has commits ahead of origin/$DEFAULT_BRANCH:> '$CURRENT_BRANCH' has N commits ahead of origin/$DEFAULT_BRANCH.
+
+Where should '$NEW_BRANCH' be based?
+  - $DEFAULT_BRANCH    (typical — clean stack off trunk)
+  - $CURRENT_BRANCH    (stack the new work on top of '$CURRENT_BRANCH')
+
+(default / current)
+```
+
+- `default` → `$BASE_REF = "origin/$DEFAULT_BRANCH"` (after `git fetch origin $DEFAULT_BRANCH`).
+- `current` → `$BASE_REF = $CURRENT_BRANCH` (local ref; no fetch needed).
+
+### Step 5 — Create the branch
+
+Skip entirely if `$NEW_BRANCH == null` (user picked `skip` in Step 4b). Set `$BRANCH_OUTCOME = "skipped — user picked 'skip'"` and continue to Step 6.
+
+#### 5a. If the branch already exists, switch to it instead of creating
+
+- **Local:** `git rev-parse --verify "refs/heads/$NEW_BRANCH" 2>/dev/null` succeeds → `git switch "$NEW_BRANCH"`. Set `$BRANCH_OUTCOME = "switched to existing local branch '$NEW_BRANCH'"`. Skip 5b.
+- **Remote only:** `git ls-remote --heads origin "$NEW_BRANCH"` returns a line → `git fetch origin "$NEW_BRANCH"`, then `git switch --track "origin/$NEW_BRANCH"`. Set `$BRANCH_OUTCOME = "tracked existing remote branch 'origin/$NEW_BRANCH'"`. Skip 5b.
+
+#### 5b. Create fresh off `$BASE_REF`
+
+- If `$BASE_REF` starts with `origin/`: `git fetch origin "<ref-after-origin/>"` first to ensure a current local view of the base.
+- `git switch -c "$NEW_BRANCH" "$BASE_REF"`.
+- Set `$BRANCH_OUTCOME = "created '$NEW_BRANCH' off '$BASE_REF'"`.
+
+On any git failure (invalid base, ref-format edge case, conflicts the working tree introduces): print git's stderr verbatim and stop. **Do not seed the tracking dir** (Step 6) — leaving nothing partial means the user can fix the underlying git issue and re-run `/ticket-plugin:start` cleanly. The ticket is already transitioned to In Progress on the remote system, which is fine: re-run hits the "already In Progress" branch in Step 3a (idempotent).
+
+### Step 6 — Seed the tracking dir
 
 - Create `~/.claude/ticket-active/$ARGUMENTS/`.
 - Write `task_plan.md`:
@@ -130,19 +227,23 @@ Three cases by *category* (JIRA `statusCategory.key`, Linear `state.type`):
   ## Session <YYYY-MM-DD HH:MM>
 
   Started fresh from <JIRA | Linear> description.
-  Branch at start: <git branch --show-current> (cwd: <pwd>)
+  Branch: <git branch --show-current after Step 5> (cwd: <pwd>) — $BRANCH_OUTCOME
   Transition: <"none — already In Progress" | "<old state> → In Progress" | "no transition available — change manually">
   ```
 - Write `$ARGUMENTS` to `~/.claude/ticket-active/CURRENT-$PREFIX`.
-- Print: `"Started $ARGUMENTS — tracking at ~/.claude/ticket-active/$ARGUMENTS/. <transition summary>."`
+- Print: `"Started $ARGUMENTS — tracking at ~/.claude/ticket-active/$ARGUMENTS/. <transition summary>. <branch summary>."` where `<branch summary>` is one of: `"On '$NEW_BRANCH' (created off '$BASE_REF')"` | `"On '$NEW_BRANCH' (existing branch)"` | `"Branch creation skipped — you're on '<git branch --show-current>'"`.
 
 ## Rules
 
 - Fresh-start DOES transition the ticket to In Progress. Resume does NOT touch ticket-system state.
-- Does NOT touch git. The user manages branches.
+- **Fresh-start creates a feature branch named `<type>/$ARGUMENTS`** (e.g. `fix/MAZ-99`) unless the user picks `skip` in Step 4b. `<type>` is always chosen by the user — the skill may offer a heuristic suggestion from labels/title, but the user can override with any of the Conventional-Commits prefixes, a custom token that passes `git check-ref-format`, or `skip`.
+- **Resume does NOT touch git.** It reads tracking files and writes a session header. If `progress.md` records a different branch than `git branch --show-current`, mention it but don't switch.
+- **When cwd is already on a non-default branch at fresh-start time**, the skill warns and asks whether to base the new branch off the repo's default branch (clean stack off trunk — typical) or off the current branch (stacking on a feature branch). It never silently uses the current branch as base — too easy to accidentally stack on someone's WIP.
+- Branch creation never uses `git push --force`, `git reset --hard`, or `git branch -D`. If `git switch -c` fails, the failure surfaces verbatim and the user resolves it manually.
 - Tracking lives at `~/.claude/ticket-active/$ARGUMENTS/`, NOT in any repo. Survives `cd` between repos.
 - Failure handling:
-  - Ticket-system detection fails (neither MCP): error, don't seed, don't touch CURRENT.
-  - Ticket fetch fails: error, don't seed.
-  - Transition fails after a successful fetch: report, but still seed the tracking dir. Note in `progress.md`.
-  - Disk write fails: report and stop.
+  - Ticket-system detection fails (neither MCP): error, don't seed, don't touch CURRENT, don't touch git.
+  - Ticket fetch fails: error, don't seed, don't touch git.
+  - Transition fails after a successful fetch: report, continue to branch creation + seeding. Note in `progress.md`.
+  - Branch creation fails (Step 5): report git's stderr verbatim. **Don't seed the tracking dir** — re-running `/ticket-plugin:start` after the user fixes the git issue picks up cleanly (transition is idempotent via Step 3a).
+  - Disk write fails (Step 6): report and stop. Branch has already been created/switched-to; that's fine — re-running on a clean disk re-seeds cleanly.

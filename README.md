@@ -43,17 +43,29 @@ The seven slash commands are the loop:
             │  ┌──────────────────────────────────────────────┐
             │  │  gh pr merge → advance ticket one state      │
             │  │  (e.g. In Progress → In Review, not Done) → │
-            │  │  push baseRef to all remotes → archive local │
+            │  │  push baseRef to all remotes → delete branch │
+            │  │  → recommend whether to run :archive now     │
             │  └──────────────────────────────────────────────┘
             ▼
-         shipped
+        (code shipped — wait here if ticket landed in
+         an intermediate state like "In Review")
+            │
+            ▼
+   /ticket-plugin:archive    ←─── once ticket is in a terminal Done-type state
+            │  ┌──────────────────────────────────────────────┐
+            │  │  push task_plan as ticket description + DoD  │
+            │  │  comment + findings comment → mv tracking    │
+            │  │  to ticket-archive/ → clear CURRENT-PREFIX   │
+            │  └──────────────────────────────────────────────┘
+            ▼
+          done
 ```
 
 A few properties of the workflow that matter:
 
 - **Per-ticket context isolation.** Each ticket gets its own `task_plan.md`, `findings.md`, `progress.md` at `~/.claude/ticket-active/<TICKET>/`. When you're on `MAZ-26`, only `MAZ-26`'s notes load — not the dozen others you've touched recently.
 - **Parallel project work.** `.project-prefix` files plus per-prefix `CURRENT-<PREFIX>` pointers let you have a Linear ticket active in one repo and a JIRA ticket active in another at the same time, in separate Claude sessions.
-- **Durable record back to the ticket.** When you `/ticket-plugin:archive` (or `:merge`, which includes it), the final task plan becomes the ticket's description and the findings become a comment. The ticket itself becomes a record of what was actually done, not just a title and a merged PR diff.
+- **Durable record back to the ticket.** When you run `/ticket-plugin:archive` (after the ticket has reached a terminal state on the ticket system), the final task plan becomes the ticket's description, a timestamped DoD-confirmation comment walks each Definition-of-Done item with evidence, and the findings become a separate comment. The ticket itself becomes a record of what was actually done, not just a title and a merged PR diff. `/ticket-plugin:merge` does NOT do this — it ships the code and tells you whether to run `:archive` now or wait for QA.
 
 ---
 
@@ -151,8 +163,8 @@ The plugin reads this on every invocation. **It only operates on tickets whose k
 
 Two modes, decided automatically:
 
-- **Fresh-start** (no local tracking dir for this ticket): fetches the ticket from Linear/JIRA, transitions it to In Progress, and seeds `task_plan.md`, `findings.md`, `progress.md` at `~/.claude/ticket-active/MAZ-26/`.
-- **Resume** (tracking dir already exists): reads the tracking files, prints a summary of where you left off, appends a `## Session <ts>` header to `progress.md`. No ticket-system call.
+- **Fresh-start** (no local tracking dir for this ticket): fetches the ticket from Linear/JIRA, transitions it to In Progress, **creates a feature branch named `<type>/<TICKET>`** (e.g. `fix/MAZ-26`, `feat/MAZ-26`) — `<type>` is a Conventional-Commits-style prefix chosen interactively, with a heuristic suggestion when one can be inferred from the ticket's labels or title; a `skip` option opts out of branch creation entirely. If cwd is already on a non-default branch, the skill warns and asks whether to base the new branch off the default branch (typical, clean stack off trunk) or off the current branch (stacking on a feature branch). Then seeds `task_plan.md`, `findings.md`, `progress.md` at `~/.claude/ticket-active/MAZ-26/`.
+- **Resume** (tracking dir already exists): reads the tracking files, prints a summary of where you left off, appends a `## Session <ts>` header to `progress.md`. No ticket-system call, no git.
 
 If a different ticket of the same prefix is already active, `/ticket-plugin:start` runs `/ticket-plugin:update` on the old one first (captures its state) before switching. No "are you sure" prompt — same project, same `.project-prefix`, automatic switch.
 
@@ -224,16 +236,22 @@ When you've already moved the ticket to a terminal state on the ticket system yo
 
 Refuses to run if the ticket isn't already in a terminal state. The user controls the transition; this command syncs.
 
-### `/ticket-plugin:merge` — ship it
+### `/ticket-plugin:merge` — ship the code
 
 ```
 /ticket-plugin:merge
 /ticket-plugin:merge --pr 123 --strategy squash
 ```
 
-When the PR is review-approved and CI is green: merges the PR via `gh pr merge` (default strategy: squash), **advances the ticket by one state in its workflow** (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumping to Done so the team's review / QA gates aren't skipped), propagates the merged-onto branch to all configured remotes, deletes the local feature branch, and pushes the final task plan + findings comment to the ticket then archives the local tracking dir. The proposed next state is shown in the confirmation prompt before anything irreversible happens.
+When the PR is review-approved and CI is green: merges the PR via `gh pr merge` (default strategy: squash), **advances the ticket by one state in its workflow** (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumping to Done so the team's review / QA gates aren't skipped), propagates the merged-onto branch to all configured remotes, and deletes the local feature branch. The proposed next state is shown in the confirmation prompt before anything irreversible happens.
 
-> **`:merge` vs `:archive`** — `/ticket-plugin:archive` refuses unless the ticket is already in a terminal state on the ticket system (the user transitions, the command syncs). `/ticket-plugin:merge` advances the state itself by one step and may legitimately leave the ticket in a non-terminal state (e.g. "In Review") if that's the workflow's next state — but it still archives the local tracking dir because the local work is done from the dev's perspective. QA / deploy then picks up the ticket from In Review on the ticket system without touching the local tracking.
+**`:merge` does NOT archive.** It leaves `~/.claude/ticket-active/$TICKET/` in place and `CURRENT-$PREFIX` still pointing at the ticket. The summary at the end recommends whether to run `/ticket-plugin:archive` now (✅ ticket landed in a terminal Done-type state) or to wait (⚠️ ticket landed in an intermediate state like "In Review" where QA still needs to verify). This separation exists because `:archive` pushes the final task plan as the ticket description and posts a timestamped DoD-confirmation comment — both premature on a workflow where "In Review" is a real gate, not paperwork.
+
+> **`:merge` vs `:archive`** — they're properly separate steps in the lifecycle:
+> - `:merge` ships the **code**: PR merged, ticket advanced one state, branch cleaned up. Local tracking left intact; `CURRENT-$PREFIX` still points at the ticket.
+> - `:archive` ships the **record**: pushes the final plan as the ticket description, posts the DoD-confirmation + findings comments, moves the local tracking dir to `ticket-archive/`, and clears `CURRENT-$PREFIX`. Refuses unless the ticket is already in a terminal state on the ticket system.
+>
+> For most teams you'll run `:merge`, wait for QA / review / sign-off to move the ticket to a Done-type state, then run `:archive`. For workflows where In Progress → Done has no intermediate state, you can run `:archive` immediately after `:merge`. The Step 7 recommendation tells you which case applies.
 
 Confirms once before any destructive remote action. Refuses safely on dirty trees, unpushed commits, draft PRs, merge conflicts, or mismatched head refs. Never uses `gh pr merge --admin` to bypass branch protection.
 
@@ -258,7 +276,15 @@ Open Claude Code in `~/webhooks-service`, which has `.project-prefix` set to `MA
 ```
 > /ticket-plugin:start MAZ-99
 
-Started MAZ-99 — tracking at ~/.claude/ticket-active/MAZ-99/. Linear → In Progress.
+Branch type for MAZ-99?
+  Suggested: fix  (from label 'bug')
+  Choices:   fix | feat | chore | docs | refactor | perf | test | ci | build | deploy | revert | <custom> | skip
+
+> fix
+
+Created branch 'fix/MAZ-99' off 'origin/master'.
+
+Started MAZ-99 — tracking at ~/.claude/ticket-active/MAZ-99/. Linear → In Progress. On 'fix/MAZ-99' (created off 'origin/master').
 ```
 
 `~/.claude/ticket-active/MAZ-99/task_plan.md` now exists:
@@ -519,37 +545,72 @@ PR: https://github.com/example/webhooks-service/pull/247
 
 You decide to apply the 🔴 Should-fix (nil check) and one of the 🟡 Could-fix items (UUID type). You make the edits manually, then re-run `/ticket-plugin:pr` — the second invocation skips simplify (clean), runs tests (still green), commits the fixup, pushes, and re-polls. CodeRabbit returns APPROVED this time.
 
-### 7. Ship it
+### 7. Ship the code
 
 The team reviewer ACKs. CI is green. Time to merge:
 
 ```
 > /ticket-plugin:merge
 
-About to merge MAZ-99 and ship it:
+About to merge MAZ-99 and ship the code:
   1. Merge PR #247 (maz-99-renewal-fix → master) with strategy squash
   2. Advance MAZ-99 on Linear by one state: In Progress → In Review
      (one step forward, NOT auto-Done — your team's QA / deploy gate
      between In Review and Done is preserved. Say no if this isn't right.)
   3. Switch to master, pull, push master to any non-origin remotes, delete local maz-99-renewal-fix
-  4. Archive local tracking (push task_plan + findings comment to MAZ-99, mv tracking dir)
+
+Local tracking (ticket-active/MAZ-99/) and the ticket description are NOT touched.
+After the merge, the summary will tell you whether to run /ticket-plugin:archive
+now or wait.
 
 Proceed? (yes / no / merge-only)
 
 > yes
 
-Merged PR #247 (squash, abc1234) into master.
-Advanced MAZ-99 on Linear from "In Progress" to "In Review".
-Pushed master to: origin (already up to date via gh pr merge), mirror (success).
-Deleted local maz-99-renewal-fix.
-Pushed task plan to MAZ-99 as description; posted findings as a comment.
-Archived ~/.claude/ticket-active/MAZ-99/ → ~/.claude/ticket-archive/MAZ-99/.
+Shipped MAZ-99.
 
-Shipped MAZ-99 to In Review.
+PR:      #247 merged (squash, abc1234) into master
+Ticket:  MAZ-99 advanced from 'In Progress' to 'In Review' on Linear
+Remotes: master pushed to: origin (up to date via gh pr merge), mirror
+Branch:  local maz-99-renewal-fix deleted; remote feature branch deleted by gh pr merge
+Local:   ticket-active/MAZ-99/ untouched; CURRENT-MAZ still points to MAZ-99
+
+Next step:
+  ⚠️ Ticket is now in 'In Review', which is NOT a terminal/Done state on this
+     workflow. Do NOT run /ticket-plugin:archive yet — the task plan would land
+     on the ticket while QA/review is still in progress, and the local tracking
+     dir would move out of ticket-active/ prematurely. Wait until the ticket
+     reaches a Done-type state (typically after QA sign-off), then run
+     /ticket-plugin:archive.
 ```
 
-Now MAZ-99 sits in "In Review" on Linear. QA picks it up, verifies the fix against the renewed-endpoint scenario, and moves it to "Done" themselves. The Linear ticket has:
+MAZ-99 sits in "In Review" on Linear. QA picks it up, verifies the fix against the renewed-endpoint scenario, and moves it to "Done" themselves. You get a Slack ping from the QA lead. Now it's time to close the loop locally.
+
+### 8. Archive — close the loop
+
+```
+> /ticket-plugin:archive
+
+About to archive MAZ-99 (currently in 'Done'):
+  1. Update Linear description with final task plan (original desc preserved as appendix)
+  2. Post a Definition of Done — Confirmation comment walking each DoD item with evidence
+  3. Post a Findings comment with the contents of findings.md
+  4. mv ~/.claude/ticket-active/MAZ-99/ → ~/.claude/ticket-archive/MAZ-99/
+  5. Clear ~/.claude/ticket-active/CURRENT-MAZ
+
+Proceed? (yes / no / skip-push)
+
+> yes
+
+Archived MAZ-99 (was 'Done' on Linear).
+
+Push: description updated + DoD-confirmation comment + findings comment posted
+Local: archived to ~/.claude/ticket-archive/MAZ-99/
+```
+
+The Linear ticket now has:
 - The completed task plan as its description (with the original description preserved as an appendix)
+- A timestamped "Definition of Done — Confirmation" comment with ✅/⚠️ evidence per DoD item
 - A "Findings" comment containing the investigation notes
 - State: Done
 

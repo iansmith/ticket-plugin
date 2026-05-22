@@ -1,13 +1,13 @@
 ---
-description: End-to-end "ship it" for the active ticket. Use /ticket-plugin:merge to merge the PR, advance the ticket by one state in its workflow on Linear/JIRA (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumps to Done so review/QA gates aren't skipped), delete the merged branch, and archive the local tracking dir — all in one go. Confirms once before any destructive remote operation; the confirmation prompt shows the specific computed next state so you know what you're agreeing to. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. Auto-detects ticket system.
+description: End-to-end "ship it" for the active ticket — code side only. Use /ticket-plugin:merge to merge the PR, advance the ticket by one state in its workflow on Linear/JIRA (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumps to Done so review/QA gates aren't skipped), and delete the merged branch. Does NOT archive local tracking or push the task plan back to the ticket — that's /ticket-plugin:archive, which the user runs separately once the ticket actually reaches a terminal Done-type state (typically after QA). The end-of-run summary classifies the post-transition state and tells the user whether to run :archive now or wait. Confirms once before any destructive remote operation; the confirmation prompt shows the specific computed next state so you know what you're agreeing to. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
 # /ticket-plugin:merge
 
-Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), delete the corresponding branch if cleanly merged, then archive the local tracking dir.
+Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), and delete the corresponding branch if cleanly merged. The local tracking dir (`~/.claude/ticket-active/$TICKET/`), the `CURRENT-$PREFIX` pointer, and the ticket description are NOT touched — those belong to `/ticket-plugin:archive`, which the user runs separately once the ticket has reached a terminal state.
 
-End-to-end "ship it" path. Irreversible. Confirms before each remote operation, and the confirmation shows the specific computed next state so the user knows what they're agreeing to.
+End-to-end "ship it" path for the code side only. Irreversible. Confirms once before remote operations, and the confirmation shows the specific computed next state so the user knows what they're agreeing to. After completion, the summary classifies the post-transition state (terminal vs intermediate) and tells the user whether to run `/ticket-plugin:archive` now or wait for QA.
 
 ## Project scope (every ticket skill follows this rule)
 
@@ -116,21 +116,22 @@ If the current state is already terminal (JIRA `statusCategory.key === "done"`, 
 
 ## Step 3 — Confirm with the user
 
-Show the full plan and get explicit approval. This is the only confirmation prompt — all four remote actions happen on `yes`.
+Show the full plan and get explicit approval. This is the only confirmation prompt — all three remote actions happen on `yes`.
 
-> About to merge $TICKET and ship it:
+> About to merge $TICKET and ship the code:
 >
 > 1. **Merge** PR #$PR (`$BRANCH` → `$baseRefName`) with strategy `$STRATEGY` via `gh pr merge`. (`--delete-branch` flag included; GitHub auto-deletes the remote branch if the merge succeeds.)
-> 2. **Advance** $TICKET on $SYSTEM by one state: `<current state name>` → `<computed next state name>`. (Or `"<current> — already terminal, no transition"` / `"<current> — no forward transition available on this workflow"` if applicable.) This is one step forward, NOT auto-Done. If the workflow's next state isn't what you expected, say `no` and handle it manually.
+> 2. **Advance** $TICKET on $SYSTEM by one state: `<current state name>` → `<computed next state name>`. (Or `"<current> — already terminal, no transition needed"` / `"<current> — no forward transition available on this workflow"` if applicable.) This is one step forward, NOT auto-Done. If the workflow's next state isn't what you expected, say `no` and handle it manually.
 > 3. **Switch to `$baseRefName`, pull the merge from origin, push it to any other remotes** (mirrors / forks / upstream — if `git remote` lists anything besides `origin`), then **delete the local branch** `$BRANCH` (`gh pr view` already confirmed `state: MERGED`).
-> 4. **Archive** local tracking (inlines the `/ticket-plugin:archive` body — pushes final task plan as the description; if `task_plan.md` has a Definition of Done section, posts a timestamped DoD-confirmation comment walking each item with evidence from the merge/tests/progress; posts findings.md as a separate comment if non-empty; then `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET`, clear `CURRENT-$PREFIX`).
+>
+> Local tracking (`~/.claude/ticket-active/$TICKET/`) and the ticket description are **NOT** touched by this command. `CURRENT-$PREFIX` will still point at $TICKET when this finishes. After the merge, the summary will tell you whether to run `/ticket-plugin:archive` now (ticket landed in a terminal Done-type state) or to wait until QA/review completes (ticket landed in an intermediate state like `In Review`).
 >
 > <soft-warning summary if any: BLOCKED / BEHIND / failing checks / no review approval>
 >
 > Proceed? (yes / no / merge-only)
 
-- `yes`: all four steps.
-- `merge-only`: step 1 only — merge the PR, then stop. Do NOT touch the ticket system or local tracking.
+- `yes`: all three steps.
+- `merge-only`: step 1 only — merge the PR, then stop. Do NOT touch the ticket system, do NOT push to non-origin remotes, do NOT delete the local branch, do NOT touch local tracking.
 - `no`: stop. No state changed.
 
 If any soft warnings were present, append: `"Note the warnings above — confirming will proceed anyway."`
@@ -155,8 +156,9 @@ On success:
 
 Step 2 already computed `$NEXT_TRANSITION` (JIRA) or `$NEXT_STATE` (Linear) — the next forward state in the workflow, with negative completions excluded. Step 3 already showed it to the user in the confirmation prompt. Step 5 just applies it.
 
-**Skip Step 5 entirely** if:
-- `$NEXT_TRANSITION` / `$NEXT_STATE` is `null` (already-terminal current state, or no forward transition available on this workflow). Note this in the Step 8 summary as `"already terminal — no transition"` or `"no forward transition available"` respectively.
+**Skip Step 5 entirely** if any:
+- The user chose `merge-only` in Step 3 (and Step 7's recommendation falls through to branch **E**).
+- `$NEXT_TRANSITION` / `$NEXT_STATE` is `null` (already-terminal current state, or no forward transition available on this workflow). Note this in the Step 7 summary as `"already terminal — no transition needed"` (branch **C**) or `"no forward transition available"` (branch **D**) respectively.
 
 **JIRA:**
 - `mcp__atlassian__transitionJiraIssue($TICKET, cloudId, $NEXT_TRANSITION.id)`.
@@ -170,7 +172,9 @@ On any transition error: print the error and continue to Step 6. The PR is alrea
 
 ## Step 6 — Local branch cleanup + propagate the merge to other remotes
 
-`gh pr merge --delete-branch` already handled the remote feature branch on origin. The local branch still exists, and any non-origin remotes (mirrors, upstream forks) still need the merged-onto branch pushed.
+**Skip Step 6 entirely** if the user chose `merge-only` in Step 3. The local feature branch stays, non-origin remotes stay unpropagated, and Step 7's summary reports `Branch: untouched (merge-only)` / `Remotes: skipped (merge-only)`.
+
+Otherwise: `gh pr merge --delete-branch` already handled the remote feature branch on origin. The local branch still exists, and any non-origin remotes (mirrors, upstream forks) still need the merged-onto branch pushed.
 
 ### 6a. Switch to the base and pull the merge
 
@@ -202,43 +206,92 @@ The simple rule: "delete if the PR is logically merged." For squash/rebase merge
 
 If the working tree on the new base is dirty after pull (shouldn't happen — Step 6a just switched + pulled), refuse to delete the branch and report.
 
-## Step 7 — Archive (inline `/ticket-plugin:archive` body)
+## Step 7 — Confirm and recommend next step
 
-Inline the `/ticket-plugin:archive` body — do NOT shell-invoke `/ticket-plugin:archive` (skills don't call other skills as commands). Re-use the cloudId / system from Step 2.
+Print the summary, then a `Next step:` block recommending whether to run `/ticket-plugin:archive` now or wait. The recommendation is computed from the post-transition state — terminal vs intermediate.
 
-The ticket is now terminal (either transitioned in Step 5 or already was), so the terminal-state gate that `/ticket-plugin:archive` checks will pass.
-
-Execute its Steps 4 (push) and 5 (archive) directly:
-
-1. Build the new description: body of `task_plan.md` + `\n\n---\n\n## Original description (preserved)\n\n` + the existing description fetched in Step 2.
-2. Update the ticket description: JIRA `mcp__atlassian__editJiraIssue` / Linear `mcp__linear-server__save_issue` with the new description. Do NOT touch state again.
-3. **DoD-confirmation comment.** If `task_plan.md` has a `## Definition of Done` section (drafted by `/ticket-plugin:plan`), post a separate timestamped comment walking each DoD item with evidence — same format as `/ticket-plugin:archive` Step 4b. The merge context gives you strong evidence sources to cite per item: the merge commit `$MERGE_COMMIT`, the merged PR `$PR_URL`, the test results captured by the most recent `/ticket-plugin:pr` invocation, and any `## Update` entries in `progress.md` that documented verification. Use ✅ when evidence supports the item; use ⚠️ with a plain-language reason when it doesn't. Never fake a confirmation — surface the gap. Skip the comment entirely if `task_plan.md` has no `## Definition of Done` section.
-4. If `findings.md` has content beyond the template scaffold (any `## ` heading or prose past the placeholder), post it as a separate comment titled `## Findings (from local tracking)`. JIRA `mcp__atlassian__addCommentToJiraIssue` / Linear `mcp__linear-server__save_comment`.
-5. `mv ~/.claude/ticket-active/$TICKET → ~/.claude/ticket-archive/$TICKET` (rename to `~/.claude/ticket-archive/$TICKET-<timestamp>` on collision).
-6. `: > ~/.claude/ticket-active/CURRENT-$PREFIX`.
-
-`progress.md` is intentionally NOT pushed.
-
-## Step 8 — Confirm
+### Summary block
 
 ```
 Shipped $TICKET.
 
 PR:      #$PR merged ($STRATEGY, $MERGE_COMMIT) into $baseRefName
-Ticket:  $TICKET advanced from '<old state>' to '<new state>' on $SYSTEM ( or "already terminal — no transition" / "no forward transition available" )
-DoD:     <"confirmed — all N items ✅" | "confirmed with K warnings — N-K ✅, K ⚠️" | "no DoD section in task_plan.md, comment skipped">
-Remotes: $baseRefName pushed to <list of non-origin remotes> ( or "origin only" )
+Ticket:  $TICKET advanced from '<old state>' to '<new state>' on $SYSTEM
+         ( or "already terminal — no transition needed" / "no forward transition available" / "unchanged (merge-only)" )
+Remotes: $baseRefName pushed to <list of non-origin remotes>
+         ( or "origin only" / "skipped (merge-only)" )
 Branch:  local $BRANCH deleted; remote feature branch deleted by gh pr merge
-Local:   archived to ~/.claude/ticket-archive/$TICKET/
-Push:    description updated + findings comment posted ( or "description updated" / "skipped" )
+         ( or "untouched (merge-only)" )
+Local:   ticket-active/$TICKET/ untouched; CURRENT-$PREFIX still points to $TICKET
 ```
+
+### Next-step recommendation
+
+Compute terminal-state classification from the **post-transition** state, using the same data Step 2 already fetched (no new ticket-system call):
+
+- **JIRA terminal:** new state's `statusCategory.key === "done"`.
+- **Linear terminal:** new state's `type === "completed"`.
+
+Then print exactly ONE of these blocks based on what happened:
+
+**A — Advanced into a terminal state** (Step 5 transitioned, new state is terminal):
+
+```
+Next step:
+  ✅ Ticket is now in '<new state>' — a terminal/Done state on this workflow.
+     Run /ticket-plugin:archive to push the final task plan as the description,
+     post a DoD-confirmation comment + findings comment, and move
+     ticket-active/$TICKET/ to ticket-archive/.
+```
+
+**B — Advanced into an intermediate state** (Step 5 transitioned, new state is NOT terminal):
+
+```
+Next step:
+  ⚠️ Ticket is now in '<new state>', which is NOT a terminal/Done state on this
+     workflow. Do NOT run /ticket-plugin:archive yet — the task plan would land
+     on the ticket while QA/review is still in progress, and the local tracking
+     dir would move out of ticket-active/ prematurely. Wait until the ticket
+     reaches a Done-type state (typically after QA sign-off), then run
+     /ticket-plugin:archive.
+```
+
+**C — Already terminal before the merge** ($NEXT_TRANSITION / $NEXT_STATE was `null` because current state was already terminal):
+
+```
+Next step:
+  ✅ Ticket was already in '<state>' (terminal) before the merge.
+     Run /ticket-plugin:archive to push the final task plan + DoD-confirmation
+     comment + findings comment and move tracking to ticket-archive/.
+```
+
+**D — No forward transition available** ($NEXT_TRANSITION / $NEXT_STATE was `null` because no forward state existed on the workflow):
+
+```
+Next step:
+  ⏸ No forward transition was available on this workflow — the ticket remains
+     in '<state>'. Run /ticket-plugin:archive only when the ticket actually
+     reaches a terminal Done-type state (transition manually first).
+```
+
+**E — Merge-only path** (user chose `merge-only` in Step 3):
+
+```
+Next step:
+  ⏸ Ticket state was NOT advanced (merge-only path). Run /ticket-plugin:archive
+     only when the ticket reaches a terminal state (transition manually first).
+```
+
+`progress.md` is intentionally NOT written to — the user can capture mid-flight notes via `/ticket-plugin:update` if they want.
 
 ## Rules
 
 - Confirms ONCE in Step 3 before any destructive remote action. After that, run to completion or fail loudly.
 - **The ticket transition advances by ONE state in the workflow, not auto-Done.** Same-bucket transitions are preferred (e.g., "In Progress" → "In Review" over "In Progress" → "Done") so the team's review / QA gates aren't skipped. If the workflow has no intermediate state and the only forward option is Done, then Done is what happens — but that's because Done IS the next state, not because the skill assumed it. The proposed target is shown in Step 3's confirmation prompt; the user can say `no` if it isn't right.
+- **Does NOT touch local tracking or push the task plan to the ticket.** `~/.claude/ticket-active/$TICKET/` stays in place, `CURRENT-$PREFIX` still points at $TICKET, and `task_plan.md` / `findings.md` are not pushed. `/ticket-plugin:archive` does all of that — and the user invokes it separately, once the ticket has actually reached a terminal state on the workflow (typically after QA). This separation exists because `:merge`'s "advance one state" frequently lands the ticket in an intermediate state like "In Review" that QA still needs to act on; pushing the task plan to the description and moving the local tracking dir out at that point would both be premature.
+- **Step 7 always tells the user whether to run `/ticket-plugin:archive` now or wait.** Terminal-state classification of the post-transition state: JIRA `statusCategory.key === "done"`, Linear `state.type === "completed"`. Terminal → ✅ recommend `:archive` now. Non-terminal → ⚠️ warn to wait until QA sign-off. No forward transition possible, or merge-only path → ⏸ neutral note ("when ready, transition manually first").
 - All-or-nothing on the PR merge (Step 4). If it fails, no other state changes.
-- The ticket transition (Step 5) and archive push (Step 7's description update) are best-effort after the merge — surface failures but don't roll back. The PR is already merged; we can't un-ship.
+- The ticket transition (Step 5) is best-effort after the merge — surface failures but don't roll back. The PR is already merged; we can't un-ship.
 - Branch deletion (Step 6) is the last destructive local action. Uses `gh pr view`'s authoritative `state: MERGED` rather than `git`'s commit-equivalence check, so squash and rebase merges work.
 - Never run `git push --force`, `git reset --hard`, or skip pre-commit hooks. None of those are part of this flow.
 - Never enable `--admin` on `gh pr merge` to bypass branch protection. If the merge is BLOCKED, surface the reason and ask the user to handle it.
@@ -246,7 +299,5 @@ Push:    description updated + findings comment posted ( or "description updated
   - **Pre-flight fails**: print reason and stop. No state changed.
   - **Step 1 (PR resolution) fails**: print reason and stop. No state changed.
   - **Step 4 (merge) fails**: print error, stop. No state changed.
-  - **Step 5 (transition) fails**: print error, continue to Step 6. PR is merged.
-  - **Step 6 (branch cleanup) fails** (e.g. uncommitted changes appeared): leave local branch in place, continue to Step 7. Report at the end.
-  - **Step 7 (archive push) fails**: don't move the local dir. Report. The ticket is correctly in Done state remotely but lacks the final description push; user can re-run `/ticket-plugin:archive` later.
-  - **Step 7 (local move) fails after push succeeded**: report. Re-run `/ticket-plugin:archive` later for the local cleanup.
+  - **Step 5 (transition) fails**: print error, continue to Step 6. PR is merged. Step 7's recommendation falls through to branch **D** (no forward transition) since we don't know the new state.
+  - **Step 6 (branch cleanup) fails** (e.g. uncommitted changes appeared): leave local branch in place, continue to Step 7 and report at the end.

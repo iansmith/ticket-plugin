@@ -55,9 +55,13 @@ Installed 7 commands to $DEST:
   /ticket-plan [args]     investigate + write a parallelism-aware plan; optional agent fanout
   /ticket-pause           pause the currently active ticket
   /ticket-update          mid-session checkpoint to progress.md
-  /ticket-archive         archive a ticket already moved to Done on Linear/JIRA
+  /ticket-archive         push final plan + DoD-confirmation comment + findings to a
+                          ticket already moved to a Done-type state on Linear/JIRA, then
+                          archive the local tracking dir
   /ticket-pr              open a PR: simplify + commit + push + CodeRabbit poll
-  /ticket-merge           ship it: merge PR + transition Done + archive (one step)
+  /ticket-merge           ship the code: merge PR + advance ticket one state. Does NOT
+                          archive — the summary tells you whether to run
+                          /ticket-archive now (terminal state) or wait (intermediate)
 
 Restart Claude Desktop if the commands don't appear in autocomplete.
 

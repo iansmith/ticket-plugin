@@ -112,7 +112,7 @@ If `task_plan.md` has a `## Definition of Done` section (drafted by `/ticket-plu
 For each DoD item, look at the available evidence and write a confirmation line:
 
 - **Phase 0 red test status**: did the test that anchors this DoD item turn green? (Check by running the project's test suite, or rely on the most recent `/ticket-plugin:pr` test-gate output captured in `progress.md` if a fresh run isn't appropriate.)
-- **Commits and PR**: which commits in the ticket's branch implement this DoD item? Is there a merged PR? If `:archive` is being invoked from `:merge`'s inlined body, the merge commit SHA is available.
+- **Commits and PR**: which commits in the ticket's branch implement this DoD item? Is there a merged PR? Discover via `gh pr list --search "$TICKET" --state merged` (or by reading the `## /ticket-pr` / `## Implementation` entries in `progress.md`, which capture commit SHAs and the PR URL when `/ticket-plugin:pr` ran).
 - **Manual / observable verification**: if the user noted manual verification in `progress.md` (e.g., a `## Update` section that says "verified in dev"), reference that.
 
 Format the comment:
