@@ -19,11 +19,11 @@ Per-artifact safety: if the ticket already has a managed version (recognized by 
 
 ## Project scope (every ticket skill follows this rule)
 
-Read `.project-prefix` from cwd. Call its contents `$PREFIX`.
+Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
 **Only operate on `$PREFIX`'s tickets. Never read, write, or modify `CURRENT-*` files for any other prefix.**
 
-If `.project-prefix` is missing in cwd: stop with `"No .project-prefix in cwd. Create one (e.g. echo MAZ > .project-prefix) and retry."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
