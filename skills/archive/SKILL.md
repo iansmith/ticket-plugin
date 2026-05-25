@@ -25,18 +25,26 @@ If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in 
 
 ## Step 1 — Detect ticket system
 
-Run two ToolSearches in parallel:
+`.project-conf.toml`'s `system` field is authoritative for which backend to use; the ToolSearches resolve *how* to talk to it.
+
+Run three ToolSearches in parallel:
 
 ```
 ToolSearch(query="select:mcp__atlassian__getJiraIssue,mcp__atlassian__editJiraIssue,mcp__atlassian__addCommentToJiraIssue,mcp__atlassian__getAccessibleAtlassianResources", max_results=8)
 ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_issue,mcp__linear-server__save_comment", max_results=8)
+ToolSearch(query="select:mcp__github__get_issue,mcp__github__add_issue_comment,mcp__github__update_issue,mcp__github__list_issue_comments", max_results=8)
 ```
 
-Set `$SYSTEM`:
-- JIRA only → `JIRA`
-- Linear only (`mcp__linear-server__*`) → `Linear`
-- Both → ask: `"Both JIRA and Linear MCP are configured. Which ticket system is $TICKET on? (jira / linear)"`
-- Neither → stop: `"No ticket-system MCP found. Configure Atlassian or Linear MCP and retry."`
+Read `system` from `.project-conf.toml`. Set `$SYSTEM` (title-cased: `JIRA`, `Linear`, `GitHub`) and resolve the backend:
+
+- **JIRA** — JIRA ToolSearch must be non-empty. If empty → stop: `"system='jira' in .project-conf.toml but no Atlassian MCP found. Configure it and retry."`
+- **Linear** — Linear ToolSearch must be non-empty. If empty → stop: `"system='linear' in .project-conf.toml but no Linear MCP found. Configure it and retry."`
+- **GitHub** — resolve `$GH_BACKEND`:
+  - Canonical github ToolSearch non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__github__"`.
+  - Canonical empty → run fallback: `ToolSearch(query="select:mcp__plugin_github_github__get_me,mcp__plugin_github_github__add_issue_comment,mcp__plugin_github_github__issue_write", max_results=8)`. If non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__plugin_github_github__"`.
+  - Both empty → `$GH_BACKEND = "CLI"`. Find `gh` binary by trial path: `/usr/local/bin/gh`, `$HOME/.local/bin/gh`, `/opt/homebrew/bin/gh`, then `command -v gh`. Save as `$GH`. If none resolve, stop: `"Neither GitHub MCP nor 'gh' CLI found. Install one of: gh CLI (https://cli.github.com/) or the github plugin (/plugin install github@claude-plugins-official)."`. Verify auth: `$GH auth status` must succeed.
+
+See `design/github-backend-primitives.md` for the full primitives + rationale.
 
 ## Step 2 — Terminal-state gate (refuse if not terminal)
 
@@ -51,6 +59,12 @@ The specific terminal state doesn't matter; the gate is the category.
 - Fetch via `mcp__linear-server__get_issue($TICKET)`.
 - If `state.type` ∉ `{"completed", "canceled"}`, refuse.
 
+**GitHub:**
+- Parse `$OWNER` and `$REPO` from `.project-conf.toml`'s `key` field. Parse `$N` from `$TICKET`.
+- **MCP path:** `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)` → read `state` and `body`.
+- **CLI path:** `$GH issue view $N --json state,body` → same fields.
+- If `state !== "CLOSED"`, refuse. Github has no completed/canceled nuance — binary OPEN/CLOSED.
+
 **Refusal output:**
 
 ```
@@ -59,6 +73,7 @@ Cannot archive $TICKET — ticket is in state '<state name>' (<system> category:
 /ticket-plugin:archive only operates on tickets already in a terminal state on the ticket system.
 - JIRA: Done category (Done, Closed, Resolved, Won't Do, Canceled).
 - Linear: state type 'completed' or 'canceled'.
+- GitHub: issue state CLOSED.
 
 Move $TICKET to a terminal state on <system> first, then re-run /ticket-plugin:archive.
 ```
@@ -86,7 +101,7 @@ Show what will happen and get explicit approval (partially irreversible — hits
 
 Skip entirely if user picked `skip-push` in Step 3.
 
-Execute the body of `/ticket-plugin:document` Steps 1–7 against `$TICKET`. Reuse cloudId / system / fetched description from this skill's Step 1 + Step 2 — don't re-fetch. The reader should consult `skills/document/SKILL.md` for the full per-artifact classification, divergence detection (Step 4–5 there), DoD-confirmation comment format + evidence gathering (Step 3b), findings comment format (Step 3c), and description-with-preserved-original-appendix logic (Step 3a). What follows describes how `:archive`'s invocation differs from a standalone `:document` run:
+Execute the body of `/ticket-plugin:document` Steps 1–7 against `$TICKET`. Reuse system-specific context from this skill's Step 1 + Step 2 — don't re-fetch (JIRA `cloudId`; Linear nothing extra; GitHub `$OWNER`/`$REPO`/`$N`/`$GH_BACKEND`/`$GH_MCP_NS`/`$GH`). The reader should consult `skills/document/SKILL.md` for the full per-artifact classification, divergence detection (Step 4–5 there), DoD-confirmation comment format + evidence gathering (Step 3b), findings comment format (Step 3c), and description-with-preserved-original-appendix logic (Step 3a). What follows describes how `:archive`'s invocation differs from a standalone `:document` run:
 
 - **No `--force` support in `:archive`.** If `:document`'s Step 5 safety check would stop on a divergent artifact, `:archive` propagates the stop:
   - Print the per-artifact divergence diff exactly as `:document` Step 5 would.
