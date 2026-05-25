@@ -60,18 +60,26 @@ Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exist
 
 ### Step 1 — Detect ticket system
 
-Run two ToolSearches in parallel (single message, two tool calls):
+`.project-conf.toml`'s `system` field is authoritative for which backend to use; the ToolSearches resolve *how* to talk to it (which MCP, or fall back to `gh` CLI for github).
+
+Run three ToolSearches in parallel (single message, three tool calls):
 
 ```
 ToolSearch(query="select:mcp__atlassian__getJiraIssue,mcp__atlassian__getAccessibleAtlassianResources,mcp__atlassian__getTransitionsForJiraIssue,mcp__atlassian__transitionJiraIssue", max_results=8)
 ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_issue,mcp__linear-server__list_issue_statuses", max_results=8)
+ToolSearch(query="select:mcp__github__get_issue,mcp__github__add_issue_comment,mcp__github__update_issue,mcp__github__list_issue_comments", max_results=8)
 ```
 
-Set `$SYSTEM`:
-- JIRA tools only → `JIRA`
-- Linear tools only (`mcp__linear-server__*`) → `Linear`
-- Both → ask: `"Both JIRA and Linear MCP are configured this session. Which should /ticket-plugin:start use? (jira / linear)"`
-- Neither → stop: `"No ticket-system MCP found. Configure Atlassian or Linear MCP and retry."`
+Read `system` from `.project-conf.toml` (already extracted in the Project scope section). Set `$SYSTEM` from it (title-cased: `JIRA`, `Linear`, `GitHub`) and resolve the backend:
+
+- **JIRA** — the JIRA ToolSearch must be non-empty. If empty → stop: `"system='jira' in .project-conf.toml but no Atlassian MCP found. Configure it and retry."`
+- **Linear** — the Linear ToolSearch must be non-empty. If empty → stop: `"system='linear' in .project-conf.toml but no Linear MCP found. Configure it and retry."`
+- **GitHub** — resolve `$GH_BACKEND`:
+  - Canonical github ToolSearch non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__github__"`.
+  - Canonical empty → run fallback: `ToolSearch(query="select:mcp__plugin_github_github__get_me,mcp__plugin_github_github__add_issue_comment,mcp__plugin_github_github__issue_write", max_results=8)`. If non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__plugin_github_github__"`.
+  - Both empty → `$GH_BACKEND = "CLI"`. Find the `gh` binary by trial path (first one where `<path> --version` succeeds): `/usr/local/bin/gh`, `$HOME/.local/bin/gh`, `/opt/homebrew/bin/gh`, then `command -v gh`. Save as `$GH`. If none resolve, stop: `"Neither GitHub MCP nor 'gh' CLI found. Install one of: gh CLI (https://cli.github.com/) or the github plugin (/plugin install github@claude-plugins-official)."`. Verify auth: `$GH auth status` must succeed.
+
+See `design/github-backend-primitives.md` for the full primitives + rationale.
 
 ### Step 2 — Fetch the ticket
 
@@ -84,20 +92,39 @@ Set `$SYSTEM`:
 - Fetch via `mcp__linear-server__get_issue` with `$ARGUMENTS`. Returns title, description, state, assignee, team, priority, labels, url.
 - Read `state.type` ∈ `{"backlog", "unstarted", "started", "completed", "canceled"}` (the `type` field on the workflow state, not the state name).
 
+**GitHub:**
+- Parse `$OWNER` and `$REPO` from `.project-conf.toml`'s `key` field (e.g. `iansmith/ticket-plugin` → `$OWNER=iansmith`, `$REPO=ticket-plugin`). Parse `$N` from `$ARGUMENTS` (digits after the `<PREFIX>-`, e.g. `BILL-8` → `$N=8`).
+- **MCP path** (`$GH_BACKEND = "MCP"`): call `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)`. Returns `{number, title, state, body, labels, assignees, milestone, url, ...}`.
+- **CLI path** (`$GH_BACKEND = "CLI"`): `$GH issue view $N --json number,title,state,body,labels,assignees,milestone,url`. Same fields.
+- Read `state` ∈ `{"OPEN", "CLOSED"}` (binary; no nuance). Read `labels` (array of `{name, color, description}`).
+- Parse `$IN_PROGRESS_LABEL` from `.project-conf.toml`'s `[status_labels].in_progress` (snippet in `design/github-backend-primitives.md`). If missing, stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."`
+- Check membership of `$IN_PROGRESS_LABEL` in `labels` — whether it's already present determines the Step 3 path.
+
 ### Step 3 — Transition to In Progress (if needed)
 
-Three cases by *category* (JIRA `statusCategory.key`, Linear `state.type`):
+Three cases by *current state*, with system-specific mappings:
 
-**a. Already in progress** (JIRA `indeterminate`; Linear `started`) — skip transition. Note "already In Progress" in the confirmation.
+**a. Already in progress** — skip transition. Note "already In Progress" in the confirmation.
+- *JIRA:* `status.statusCategory.key === "indeterminate"`.
+- *Linear:* `state.type === "started"`.
+- *GitHub:* issue is `OPEN` AND has `$IN_PROGRESS_LABEL` already.
 
-**b. Pre-progress** (JIRA `new`; Linear `backlog` / `unstarted`) — transition:
-- *JIRA:* `getTransitionsForJiraIssue` → pick a transition whose target has `statusCategory.key === "indeterminate"`. If multiple, prefer one whose name contains "progress" (case-insensitive); else first. Call `transitionJiraIssue` with that transition id. If no matching transition exists, print `"Couldn't find an In-Progress transition on $ARGUMENTS — transition manually on JIRA if needed."` and continue with seeding.
-- *Linear:* Call `mcp__linear-server__list_issue_statuses` for the issue's team. Filter to entries with `type === "started"`. If multiple, prefer one whose name contains "progress"; else first. Call `mcp__linear-server__save_issue` with the issue id and `stateId = <chosen state id>`. If no `started`-type state exists, print warning and continue.
+**b. Pre-progress** — transition:
+- *JIRA* (`status.statusCategory.key === "new"`): `getTransitionsForJiraIssue` → pick a transition whose target has `statusCategory.key === "indeterminate"`. If multiple, prefer one whose name contains "progress" (case-insensitive); else first. Call `transitionJiraIssue` with that transition id. If no matching transition exists, print `"Couldn't find an In-Progress transition on $ARGUMENTS — transition manually on JIRA if needed."` and continue with seeding.
+- *Linear* (`state.type ∈ {"backlog", "unstarted"}`): call `mcp__linear-server__list_issue_statuses` for the issue's team. Filter to entries with `type === "started"`. If multiple, prefer one whose name contains "progress"; else first. Call `mcp__linear-server__save_issue` with the issue id and `stateId = <chosen state id>`. If no `started`-type state exists, print warning and continue.
+- *GitHub* (issue is `OPEN` AND does NOT have `$IN_PROGRESS_LABEL`): apply `$IN_PROGRESS_LABEL` (parsed in Step 2):
+  - **MCP path:** call `${GH_MCP_NS}add_issue_labels(owner=$OWNER, repo=$REPO, issueNumber=$N, labels=[$IN_PROGRESS_LABEL])`.
+  - **CLI path:** `$GH issue edit $N --add-label "$IN_PROGRESS_LABEL"`.
+  - Github silently accepts adding a label already on the issue; no pre-check needed.
+  - If the label doesn't exist on the repo, the call fails — print the error and continue with seeding (the user can create the label manually or via `/ticket-gh-init`).
 
-**c. Already done** (JIRA `done`; Linear `completed` / `canceled`) — ask before reopening:
+**c. Already done** — ask before reopening:
+- *JIRA:* `status.statusCategory.key === "done"`.
+- *Linear:* `state.type ∈ {"completed", "canceled"}`.
+- *GitHub:* issue is `CLOSED`.
 - Print: `"Ticket $ARGUMENTS is in a terminal state ('<state name>'). Start work anyway? This will reopen it to In Progress. (yes / no)"`.
 - `no` → stop. Don't create the tracking dir.
-- `yes` → transition as in case (b).
+- `yes` → transition as in case (b). For github, reopen first (`${GH_MCP_NS}update_issue(owner=$OWNER, repo=$REPO, issueNumber=$N, state="open")` or `$GH issue reopen $N`), then apply the in-progress label.
 
 ### Step 4 — Decide branch type and base ref
 
