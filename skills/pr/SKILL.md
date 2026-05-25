@@ -1,5 +1,5 @@
 ---
-description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /ticket-plugin:pr to (1) run Claude Code's simplify skill on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
+description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /ticket-plugin:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
 disable-model-invocation: true
 ---
 
@@ -48,11 +48,15 @@ Skip if `--no-simplify` was passed, OR if `$DIRTY` is empty (nothing to simplify
 The goal: catch reuse/quality/efficiency issues before they land in a commit, since simplify works best on uncommitted work. Approach:
 
 1. Snapshot the current diff: `git diff > /tmp/pr-before-simplify.diff && git diff --staged >> /tmp/pr-before-simplify.diff`.
-2. Invoke the `simplify` skill via the Skill tool:
+2. Invoke the code-simplifier agent via the Agent tool:
    ```
-   Skill(skill: "simplify")
+   Agent(
+     subagent_type: "code-simplifier",
+     description: "Simplify uncommitted changes",
+     prompt: "Review the uncommitted changes in this working tree (against HEAD). Identify and simplify dead code, duplicated logic, over-eager defensive coding, and unnecessary complexity that crept in during implementation. Apply the simplifications directly to the working tree. The user will review the resulting diff before committing. Do not change behavior — only structure, readability, and redundancy."
+   )
    ```
-3. If the Skill tool reports `simplify` is unavailable in this session: print `"simplify skill not available — install Claude Code's bundled skills, or proceed without it."` and ask `"Continue without simplify? (yes / no)"`. On `no`: stop.
+3. If the Agent tool reports `code-simplifier` is unavailable in this session: print `"code-simplifier agent not available — install Claude Code's bundled agents, or proceed without it."` and ask `"Continue without simplify? (yes / no)"`. On `no`: stop.
 4. After simplify completes, capture the post-state diff the same way: `git diff > /tmp/pr-after-simplify.diff && git diff --staged >> /tmp/pr-after-simplify.diff`.
 5. Compare the two diffs:
    - **Identical** — simplify found nothing to fix. Continue silently to Step 2.
