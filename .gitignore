@@ -2,3 +2,10 @@
 *.swp
 .idea/
 .vscode/
+
+# Runtime state for the postgres-pgvector container (BILL-12 / BILL-13).
+# Mounted into the container; populated by initdb on first start.
+# The empty directory itself is tracked via pgdata/.gitkeep so a fresh
+# clone can `docker run` without first having to mkdir.
+pgdata/*
+!pgdata/.gitkeep
