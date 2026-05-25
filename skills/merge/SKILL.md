@@ -71,18 +71,26 @@ Refuse with a clear reason if any:
 
 ## Step 2 — Detect ticket system
 
-Run two ToolSearches in parallel:
+`.project-conf.toml`'s `system` field is authoritative for which backend to use; the ToolSearches resolve *how* to talk to it.
+
+Run three ToolSearches in parallel:
 
 ```
 ToolSearch(query="select:mcp__atlassian__getJiraIssue,mcp__atlassian__editJiraIssue,mcp__atlassian__getTransitionsForJiraIssue,mcp__atlassian__transitionJiraIssue,mcp__atlassian__addCommentToJiraIssue,mcp__atlassian__getAccessibleAtlassianResources", max_results=10)
 ToolSearch(query="select:mcp__linear-server__get_issue,mcp__linear-server__save_issue,mcp__linear-server__save_comment,mcp__linear-server__list_issue_statuses", max_results=8)
+ToolSearch(query="select:mcp__github__get_issue,mcp__github__add_issue_comment,mcp__github__update_issue,mcp__github__list_issue_comments", max_results=8)
 ```
 
-Set `$SYSTEM`:
-- JIRA tools only → `JIRA`
-- Linear tools only (`mcp__linear-server__*`) → `Linear`
-- Both → ask: `"Both JIRA and Linear MCP are configured. Which is $TICKET on? (jira / linear)"`
-- Neither → stop: `"No ticket-system MCP found. Configure Atlassian or Linear MCP and retry."`
+Read `system` from `.project-conf.toml`. Set `$SYSTEM` (title-cased: `JIRA`, `Linear`, `GitHub`) and resolve the backend:
+
+- **JIRA** — JIRA ToolSearch must be non-empty. If empty → stop: `"system='jira' in .project-conf.toml but no Atlassian MCP found. Configure it and retry."`
+- **Linear** — Linear ToolSearch must be non-empty. If empty → stop: `"system='linear' in .project-conf.toml but no Linear MCP found. Configure it and retry."`
+- **GitHub** — resolve `$GH_BACKEND`:
+  - Canonical github ToolSearch non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__github__"`.
+  - Canonical empty → run fallback: `ToolSearch(query="select:mcp__plugin_github_github__get_me,mcp__plugin_github_github__add_issue_comment,mcp__plugin_github_github__issue_write", max_results=8)`. If non-empty → `$GH_BACKEND = "MCP"`, `$GH_MCP_NS = "mcp__plugin_github_github__"`.
+  - Both empty → `$GH_BACKEND = "CLI"`. Find `gh` binary by trial path: `/usr/local/bin/gh`, `$HOME/.local/bin/gh`, `/opt/homebrew/bin/gh`, then `command -v gh`. Save as `$GH`. If none resolve, stop: `"Neither GitHub MCP nor 'gh' CLI found. Install one of: gh CLI (https://cli.github.com/) or the github plugin (/plugin install github@claude-plugins-official)."`. Verify auth: `$GH auth status` must succeed.
+
+See `design/github-backend-primitives.md` for the full primitives + rationale.
 
 ### Fetch current state and compute the "advance one" target
 
@@ -114,9 +122,27 @@ The merge advances the ticket by **one** state in the workflow — not auto-Done
   4. **If multiple still tie**, pick lowest position then first.
   5. **If nothing remains**: `$NEXT_STATE = null`. Note this for Step 3.
 
+**GitHub:**
+
+Github has no introspectable workflow — the shape is declared in `.project-conf.toml`'s `[status_labels]`. No "preference logic" needed; the dispatch is hardcoded by workflow shape.
+
+- Parse `$OWNER` / `$REPO` from `key`, `$N` from `$TICKET`.
+- Read `$IN_PROGRESS_LABEL` and `$IN_REVIEW_LABEL` from `[status_labels].in_progress` and `[status_labels].in_review` via the snippet in `design/github-backend-primitives.md`. `$IN_PROGRESS_LABEL` is required (stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."` if missing). `$IN_REVIEW_LABEL` may be empty.
+- Fetch current state:
+  - MCP path: `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)` → read `state`, `labels`.
+  - CLI path: `$GH issue view $N --json state,labels`.
+- Record `$CURRENT_GH_STATE`: one of `OPEN-in-progress` (state OPEN AND `$IN_PROGRESS_LABEL` present), `OPEN-other` (state OPEN, label absent), `OPEN-in-review` (only relevant in 4-state, state OPEN AND `$IN_REVIEW_LABEL` present), `CLOSED`.
+- Compute `$NEXT_GH_ACTION` based on workflow shape:
+  - **3-state** (`$IN_REVIEW_LABEL` empty): from `OPEN-in-progress` → `{kind: "close-and-remove-label", remove: $IN_PROGRESS_LABEL}` (close issue + remove the label). From any other current state → leave `$NEXT_GH_ACTION = null` (already terminal or in a non-standard state; merge proceeds, transition step becomes a no-op).
+  - **4-state** (`$IN_REVIEW_LABEL` set): from `OPEN-in-progress` → `{kind: "swap-labels", remove: $IN_PROGRESS_LABEL, add: $IN_REVIEW_LABEL}` (remove in-progress, add in-review; issue stays open). From `OPEN-in-review` or `CLOSED` → `$NEXT_GH_ACTION = null` (already past in-progress).
+- Human-readable target for Step 3's confirmation prompt:
+  - `{kind: "close-and-remove-label", ...}` → `"Close issue + remove '$IN_PROGRESS_LABEL' label"`.
+  - `{kind: "swap-labels", ...}` → `"Remove '$IN_PROGRESS_LABEL', add '$IN_REVIEW_LABEL' (issue stays open)"`.
+  - `null` → `"already past in-progress — no transition needed"`.
+
 ### Already-terminal handling
 
-If the current state is already terminal (JIRA `statusCategory.key === "done"`, Linear `type ∈ {"completed", "canceled"}`): set `$NEXT_TRANSITION` / `$NEXT_STATE` to `null`. The merge can still proceed; the transition step becomes a clean no-op. Surface this in Step 3 as `"already terminal — no transition needed"`.
+If the current state is already terminal (JIRA `statusCategory.key === "done"`, Linear `type ∈ {"completed", "canceled"}`, GitHub `state === "CLOSED"`): set `$NEXT_TRANSITION` / `$NEXT_STATE` / `$NEXT_GH_ACTION` to `null`. The merge can still proceed; the transition step becomes a clean no-op. Surface this in Step 3 as `"already terminal — no transition needed"`.
 
 ## Step 3 — Confirm with the user
 
@@ -158,17 +184,26 @@ On success:
 
 ## Step 5 — Advance the ticket by one state
 
-Step 2 already computed `$NEXT_TRANSITION` (JIRA) or `$NEXT_STATE` (Linear) — the next forward state in the workflow, with negative completions excluded. Step 3 already showed it to the user in the confirmation prompt. Step 5 just applies it.
+Step 2 already computed `$NEXT_TRANSITION` (JIRA), `$NEXT_STATE` (Linear), or `$NEXT_GH_ACTION` (GitHub) — the next forward state in the workflow, with negative completions excluded. Step 3 already showed it to the user in the confirmation prompt. Step 5 just applies it.
 
 **Skip Step 5 entirely** if any:
 - The user chose `merge-only` in Step 3 (and Step 7's recommendation falls through to branch **E**).
-- `$NEXT_TRANSITION` / `$NEXT_STATE` is `null` (already-terminal current state, or no forward transition available on this workflow). Note this in the Step 7 summary as `"already terminal — no transition needed"` (branch **C**) or `"no forward transition available"` (branch **D**) respectively.
+- `$NEXT_TRANSITION` / `$NEXT_STATE` / `$NEXT_GH_ACTION` is `null` (already-terminal current state, or no forward transition available on this workflow). Note this in the Step 7 summary as `"already terminal — no transition needed"` (branch **C**) or `"no forward transition available"` (branch **D**) respectively.
 
 **JIRA:**
 - `mcp__atlassian__transitionJiraIssue($TICKET, cloudId, $NEXT_TRANSITION.id)`.
 
 **Linear:**
 - `mcp__linear-server__save_issue` with the issue id and `stateId = $NEXT_STATE.id`.
+
+**GitHub:**
+- If `$NEXT_GH_ACTION.kind === "close-and-remove-label"` (3-state):
+  - MCP path: `${GH_MCP_NS}update_issue(owner=$OWNER, repo=$REPO, issueNumber=$N, state="closed")` then `${GH_MCP_NS}remove_issue_label(owner=$OWNER, repo=$REPO, issueNumber=$N, label=$NEXT_GH_ACTION.remove)`.
+  - CLI path: `$GH issue close $N && $GH issue edit $N --remove-label "$NEXT_GH_ACTION.remove"`.
+- If `$NEXT_GH_ACTION.kind === "swap-labels"` (4-state):
+  - MCP path: two calls — `${GH_MCP_NS}add_issue_labels(owner=$OWNER, repo=$REPO, issueNumber=$N, labels=[$NEXT_GH_ACTION.add])` then `${GH_MCP_NS}remove_issue_label(owner=$OWNER, repo=$REPO, issueNumber=$N, label=$NEXT_GH_ACTION.remove)`. (Add first to avoid a label-less intermediate state if remove succeeds but add fails.)
+  - CLI path: single atomic call — `$GH issue edit $N --add-label "$NEXT_GH_ACTION.add" --remove-label "$NEXT_GH_ACTION.remove"`. Issue stays OPEN.
+- For both kinds: github silently accepts add/remove of a label that's already in the target state, so retries are safe.
 
 On any transition error: print the error and continue to Step 6. The PR is already merged; an inability to advance the ticket state isn't fatal. The user can transition manually after the fact.
 
@@ -235,6 +270,9 @@ Compute terminal-state classification from the **post-transition** state, using 
 
 - **JIRA terminal:** new state's `statusCategory.key === "done"`.
 - **Linear terminal:** new state's `type === "completed"`.
+- **GitHub terminal:** depends on the workflow shape recorded in Step 2.
+  - **3-state** (`$NEXT_GH_ACTION.kind === "close-and-remove-label"`): after Step 5 the issue is CLOSED → **terminal** → branch **A**.
+  - **4-state** (`$NEXT_GH_ACTION.kind === "swap-labels"`): after Step 5 the issue is OPEN with `$IN_REVIEW_LABEL` → **NOT terminal** → branch **B**.
 
 Then print exactly ONE of these blocks based on what happened:
 
@@ -260,7 +298,7 @@ Next step:
      /ticket-plugin:archive.
 ```
 
-**C — Already terminal before the merge** ($NEXT_TRANSITION / $NEXT_STATE was `null` because current state was already terminal):
+**C — Already terminal before the merge** ($NEXT_TRANSITION / $NEXT_STATE / $NEXT_GH_ACTION was `null` because current state was already terminal):
 
 ```
 Next step:
@@ -269,7 +307,7 @@ Next step:
      comment + findings comment and move tracking to ticket-archive/.
 ```
 
-**D — No forward transition available** ($NEXT_TRANSITION / $NEXT_STATE was `null` because no forward state existed on the workflow):
+**D — No forward transition available** ($NEXT_TRANSITION / $NEXT_STATE / $NEXT_GH_ACTION was `null` because no forward state existed on the workflow):
 
 ```
 Next step:
