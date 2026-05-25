@@ -24,6 +24,14 @@ ENV POSTGRES_HOST_AUTH_METHOD=trust
 # connections — so the replaced pg_hba.conf applies on the post-init start.
 COPY --chmod=0755 init-trust-auth.sh /docker-entrypoint-initdb.d/00-trust-auth.sh
 
+# BILL-16 schema bootstrap (Option A): SQL files applied at cluster init by
+# init-schema.sh in numerical order. The 01- prefix ensures it runs after
+# 00-trust-auth.sh. Future migrations land as additional schema/NNN_*.sql.
+# BILL-17 will add an entrypoint that re-applies on every start; the SQL is
+# already idempotent for that future use.
+COPY schema/ /docker-entrypoint-initdb.d/schema/
+COPY --chmod=0755 init-schema.sh /docker-entrypoint-initdb.d/01-schema.sh
+
 EXPOSE 5432
 
 # CMD and ENTRYPOINT are inherited from pgvector/pgvector:pg18, which
