@@ -13,7 +13,7 @@ Confirms before each significant remote action. Stops after presenting CodeRabbi
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
@@ -24,12 +24,16 @@ Optional `--no-simplify` to skip Step 1's simplify pass.
 Optional `--no-test` to skip Step 2's pre-commit test run.
 Optional `--no-poll` to open the PR and stop without waiting for CodeRabbit.
 
-The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains. If empty: `"No active $PREFIX ticket to PR."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to PR."` and stop.
 
 ## Pre-flight (run in parallel)
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty: stop.
-- Verify `~/.claude/ticket-active/$TICKET/` exists. If not: state corruption — stop without writing anything.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 - `$BRANCH` = `git branch --show-current`. If on the main/master branch: refuse with `"Refusing: on the main branch, not a feature branch."`
 - `$DIRTY` = `git status --porcelain` (used in Step 1 and Step 2).
 - `$DEFAULT_BRANCH` = `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` (cache for Step 4c).

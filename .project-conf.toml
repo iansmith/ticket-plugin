@@ -1,5 +1,6 @@
 system = "github"
 key    = "iansmith/ticket-plugin"
+prefix = "BILL"
 
 [status_labels]
 in_progress = "status:in-progress"

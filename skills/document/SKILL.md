@@ -21,17 +21,17 @@ Per-artifact safety: if the ticket already has a managed version (recognized by 
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or modify `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
-- Optional `$ARGUMENTS`: a ticket key like `MAZ-26`. Must match `^$PREFIX-\d+$`. If empty, use the active `CURRENT-$PREFIX`.
+- Optional `$ARGUMENTS`: a ticket key like `MAZ-26`. Must match `^$PREFIX-\d+$`. If empty, fall back to the active ticket parsed from `git branch --show-current` (see Pre-flight).
 - Optional `--force`: push the new content even when the ticket has a managed version that differs from expected. Surfaces a brief warning in Step 7's output for each overridden artifact.
 - Optional `--dry-run`: compute everything (Steps 1–4) and print the per-artifact verdict + any diffs, then stop. No remote calls in Step 6.
 
-If `$ARGUMENTS` is empty AND `CURRENT-$PREFIX` is empty: `"No active $PREFIX ticket to document; pass a ticket key as an argument or start a ticket first."` and stop.
+If `$ARGUMENTS` is empty AND no `$PREFIX-N` is found in the current git branch: `"No active $PREFIX ticket to document; pass a ticket key as an argument, or check out a feature branch encoding the ticket ID first."` and stop.
 
 Verify `~/.claude/ticket-active/$TICKET/` exists (or `~/.claude/ticket-archive/$TICKET/` for already-archived tickets). If neither: `"No local tracking found for $TICKET."` and stop.
 
@@ -234,7 +234,7 @@ For `--dry-run`, replace each verb in the summary lines with the conditional ("w
 
 ## Rules
 
-- **Does NOT change ticket state. Does NOT touch local tracking. Does NOT clear `CURRENT-$PREFIX`.** Those belong to `/ticket-plugin:archive`. `:document` is a pure remote-sync operation, callable at any point in a ticket's life.
+- **Does NOT change ticket state. Does NOT touch local tracking.** Those belong to `/ticket-plugin:archive`. `:document` is a pure remote-sync operation, callable at any point in a ticket's life.
 - **Idempotent.** Same local state + same ticket state → second consecutive run is a clean no-op (all artifacts `unchanged`).
 - **Safe by default.** If the ticket has a managed version that differs from expected, refuse-and-explain. `--force` is the explicit escape hatch.
 - **All-or-nothing on push.** If ANY artifact is `divergent` without `--force`, NONE of the artifacts get pushed. Don't half-publish.
@@ -268,7 +268,7 @@ For `--dry-run`, replace each verb in the summary lines with the conditional ("w
                                        ▼
 :archive     → push any last documentation updates (idempotent — usually a
                clean no-op because :document already pushed), then mv local
-               tracking to ticket-archive/ and clear CURRENT-<PREFIX>.
+               tracking to ticket-archive/.
 ```
 
 The separation is deliberate: `:merge` ships code (deterministic, immediate), `:document` populates the ticket for the reviewer (when ready for review), `:archive` closes the local lifecycle (after the reviewer has signed off). Workflows that have no `In Review` gate (where `:merge` advances straight to Done) collapse `:document` and `:archive` into a single `:archive` invocation — `:document`'s body is inlined there anyway.

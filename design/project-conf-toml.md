@@ -40,11 +40,14 @@ key    = "PLTF"
 ```toml
 system = "github"
 key    = "iansmith/ticket-plugin"
+prefix = "BILL"                     # short identifier used in branch names + filesystem paths
 
 [status_labels]
 in_progress = "status:in-progress"
 in_review   = "status:in-review"   # only present in the 4-state workflow; omit for 3-state
 ```
+
+`prefix` is **required** for `system = "github"` because `key` (`owner/repo`) contains a slash and is too long for branch/path use. For Linear/JIRA, `key` already plays this role (`MAZ`, `LOU`, `PLTF`), so `prefix` is omitted.
 
 `[status_labels]` is **required** for GitHub (no native state machine; states are encoded as labels). For Linear / JIRA, states are first-class and the section is omitted.
 
@@ -75,6 +78,7 @@ All optional. First-cut implementations may ignore `[branch_prefixes]` and hardc
 |---|---|---|
 | `system` | yes | `"linear"` / `"jira"` / `"github"` |
 | `key`    | yes | system-specific identifier (Linear team key, JIRA project key, GH `owner/repo`) |
+| `prefix` | required for `system = "github"`; omitted for Linear/JIRA | short token (3-6 chars), filesystem/branch-safe, used in `$PREFIX-N` ticket IDs (e.g. `BILL-2`). For Linear/JIRA, `key` already plays this role. |
 | `[status_labels].in_progress` | required for `system = "github"` | else N/A |
 | `[status_labels].in_review` | required for `system = "github"` with 4-state workflow | absent for 3-state |
 | `[rag].*`  | no | RAG behavior defaults if absent |

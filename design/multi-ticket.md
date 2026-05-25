@@ -68,7 +68,7 @@ The prefix is informational. The selection lookup parses the ticket ID anywhere 
 Every `ticket-*` skill that needs to know the active ticket runs the same lookup:
 
 ```
-1. Read .project-conf.toml → $PREFIX.
+1. Read .project-conf.toml. $PREFIX = `prefix` if set, else `key`. (Linear/JIRA use `key` because it is already a short identifier like MAZ/LOU/PLTF; GitHub-backed projects set `prefix` explicitly because `key` is `owner/repo` and unsafe for branch names / filesystem paths.)
 2. $BRANCH = git branch --show-current
 3. Extract $PREFIX-\d+ from $BRANCH.
    - No match → stop with error:

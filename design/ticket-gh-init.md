@@ -42,6 +42,7 @@ It will:
   - Write .project-conf.toml in this directory with:
       • system = "github"
       • key    = "<owner>/<repo>"
+      • prefix = "<your-chosen-prefix>"  (short ticket-ID prefix, e.g. BILL)
       • the chosen status_labels mapping
 
 It will NOT:

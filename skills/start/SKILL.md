@@ -17,7 +17,7 @@ Auto-detects ticket system (JIRA via Atlassian MCP, or Linear via Linear MCP).
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or modify `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
@@ -35,7 +35,7 @@ If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in 
 ## Pre-flight
 
 1. Validate `$ARGUMENTS` matches `^[A-Z]+-\d+$`. If not, ask for a valid ticket key and stop.
-2. Read `~/.claude/ticket-active/CURRENT-$PREFIX`. Call its contents `$ACTIVE` (empty if the file is empty or missing). If `$ACTIVE` is non-empty AND `$ACTIVE != $ARGUMENTS`, inline the body of `/ticket-plugin:update` (don't actually invoke it as a slash command) to capture state on `$ACTIVE` before switching. (`/ticket-plugin:update` operates on `$ACTIVE` because that's what `CURRENT-$PREFIX` still points to.) Then continue.
+2. If the current branch encodes a *different* `$PREFIX-N` ticket from `$ARGUMENTS`, that's a context switch: suggest the user run `/ticket-plugin:pause` (or `/ticket-plugin:update`) on the current branch first to capture state, then invoke `:start $ARGUMENTS` again. (The switch itself happens via git checkout in the steps below; this skill does not auto-bridge a context switch.) On the same branch, or on a non-ticket branch, continue.
 
 Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exists with content) or Fresh-start mode (if it doesn't).
 
@@ -53,7 +53,6 @@ Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exist
   Next step: <from progress.md "Next" line, if present>
   Open questions: <from progress.md "Open" section, if present>
   ```
-- Write `$ARGUMENTS` to `~/.claude/ticket-active/CURRENT-$PREFIX`.
 - Append a `## Session <YYYY-MM-DD HH:MM>` header to `progress.md` with the line "Resumed".
 - Stop. If `progress.md` records a different branch than `git branch --show-current`, mention it but don't switch — the user manages git.
 
@@ -230,7 +229,6 @@ On any git failure (invalid base, ref-format edge case, conflicts the working tr
   Branch: <git branch --show-current after Step 5> (cwd: <pwd>) — $BRANCH_OUTCOME
   Transition: <"none — already In Progress" | "<old state> → In Progress" | "no transition available — change manually">
   ```
-- Write `$ARGUMENTS` to `~/.claude/ticket-active/CURRENT-$PREFIX`.
 - Print: `"Started $ARGUMENTS — tracking at ~/.claude/ticket-active/$ARGUMENTS/. <transition summary>. <branch summary>."` where `<branch summary>` is one of: `"On '$NEW_BRANCH' (created off '$BASE_REF')"` | `"On '$NEW_BRANCH' (existing branch)"` | `"Branch creation skipped — you're on '<git branch --show-current>'"`.
 
 ## Rules

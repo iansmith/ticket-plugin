@@ -1,28 +1,32 @@
 ---
-description: Mid-session checkpoint to the active ticket's progress.md. Use /ticket-plugin:update to snapshot what's been done so far without clearing the active pointer. The ticket stays active. Local-only — never calls JIRA or Linear.
+description: Mid-session checkpoint to the active ticket's progress.md. Use /ticket-plugin:update to snapshot what's been done so far during the same ticket session. The ticket stays active. Local-only — never calls JIRA or Linear.
 disable-model-invocation: true
 ---
 
 # /ticket-plugin:update
 
-Snapshot mid-session progress to the active ticket's tracking files. The ticket stays active — `CURRENT-<PREFIX>` is NOT cleared. Local-only — never calls JIRA or Linear.
+Snapshot mid-session progress to the active ticket's tracking files. The ticket stays active (the branch doesn't change). Local-only — never calls JIRA or Linear.
 
 ## Project scope (every ticket skill follows this rule)
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or modify `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
-None. The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains.
+None. The active ticket is parsed from `git branch --show-current` (see Pre-flight).
 
 ## Pre-flight
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty or missing: print `"No active $PREFIX ticket to update."` and stop.
-- If `~/.claude/ticket-active/$TICKET/` doesn't exist: print error and stop.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 
 ## Capture (run git calls in parallel)
 
@@ -69,7 +73,6 @@ Ticket is still active. Pause with /ticket-plugin:pause when done.
 
 ## Rules
 
-- Do NOT clear or modify `CURRENT-$PREFIX`. The ticket stays active.
 - Do NOT touch git.
 - Do NOT call JIRA or Linear.
 - Do NOT touch the auto-memory system (`~/.claude/projects/.../memory/`). Different system.

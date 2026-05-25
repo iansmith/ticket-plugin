@@ -1,11 +1,11 @@
 ---
-description: End the local lifecycle for a ticket. Delegates the documentation push to /ticket-plugin:document (description body + DoD-confirmation comment + findings comment, with idempotent skip-when-current and divergence-stop safety), then mv the local tracking dir to ~/.claude/ticket-archive/ and clear CURRENT-<PREFIX>. Use /ticket-plugin:archive AFTER moving the ticket to a terminal state (Done/Closed/etc.) on the ticket system yourself. Refuses to run otherwise. Does NOT support --force — if the documentation push would overwrite a divergent managed version on the ticket, archive stops cleanly; the user runs /ticket-plugin:document --force separately to overwrite (after eyeballing the diff), then re-runs :archive. Auto-detects ticket system.
+description: End the local lifecycle for a ticket. Delegates the documentation push to /ticket-plugin:document (description body + DoD-confirmation comment + findings comment, with idempotent skip-when-current and divergence-stop safety), then mv the local tracking dir to ~/.claude/ticket-archive/. Use /ticket-plugin:archive AFTER moving the ticket to a terminal state (Done/Closed/etc.) on the ticket system yourself. Refuses to run otherwise. Does NOT support --force — if the documentation push would overwrite a divergent managed version on the ticket, archive stops cleanly; the user runs /ticket-plugin:document --force separately to overwrite (after eyeballing the diff), then re-runs :archive. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
 # /ticket-plugin:archive
 
-End the local lifecycle for a ticket: delegate documentation push to `/ticket-plugin:document` (which handles the description body + DoD-confirmation comment + findings comment, idempotently with per-artifact safety), then move the local tracking dir to `~/.claude/ticket-archive/` and clear `CURRENT-<PREFIX>`. Only operates on tickets already in a terminal state on the ticket system — the user transitions there first, then runs this. Auto-detects ticket system.
+End the local lifecycle for a ticket: delegate documentation push to `/ticket-plugin:document` (which handles the description body + DoD-confirmation comment + findings comment, idempotently with per-artifact safety), then move the local tracking dir to `~/.claude/ticket-archive/`. Only operates on tickets already in a terminal state on the ticket system — the user transitions there first, then runs this. Auto-detects ticket system.
 
 `:archive`'s job is the *lifecycle* (terminal-state gate + local archive); the *content push* lives in `/ticket-plugin:document`. See `skills/document/SKILL.md` for the full per-artifact classification, divergence detection, DoD-evidence gathering, and description-appendix logic.
 
@@ -13,14 +13,14 @@ End the local lifecycle for a ticket: delegate documentation push to `/ticket-pl
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments and target ticket
 
 - If `$ARGUMENTS` is provided and matches `^$PREFIX-\d+$`, use it as `$TICKET`. (Supports archiving a paused ticket without resuming it first.) If it's another prefix, refuse: `"$ARGUMENTS doesn't match this project's prefix ($PREFIX)."`
-- If `$ARGUMENTS` is empty, `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty or missing: `"No active $PREFIX ticket to archive."` and stop.
+- If `$ARGUMENTS` is empty, resolve `$TICKET` from the current git branch (see the standard Pre-flight selection lookup above). If the branch doesn't encode a `$PREFIX-N` ticket: stop with the standard no-match error.
 - Verify `~/.claude/ticket-active/$TICKET/` exists. If not, error and stop.
 
 ## Step 1 — Detect ticket system
@@ -75,7 +75,6 @@ Show what will happen and get explicit approval (partially irreversible — hits
 >
 > 1. Push documentation to $SYSTEM via `/ticket-plugin:document` — description body (with current ticket description preserved as `## Original description (preserved)`), DoD-confirmation comment (if `task_plan.md` has a Definition of Done section), and findings comment (if `findings.md` has content). Already-current artifacts are skipped cleanly. **If any artifact has a managed version on the ticket that differs from local** (someone hand-edited the ticket, or another session pushed different content), archive STOPS here without moving local tracking — you'd run `/ticket-plugin:document --force` separately to overwrite, then re-run `/ticket-plugin:archive`.
 > 2. `mv ~/.claude/ticket-active/$TICKET/ → ~/.claude/ticket-archive/$TICKET/`
-> 3. Clear `~/.claude/ticket-active/CURRENT-$PREFIX`
 >
 > Proceed? (yes / no / skip-push)
 
@@ -105,7 +104,6 @@ If `:document` completes successfully (no divergence + all `new` or `unchanged` 
 
 - `mv ~/.claude/ticket-active/$TICKET ~/.claude/ticket-archive/$TICKET`
 - If destination already exists (ticket was reopened and archived twice): rename to `~/.claude/ticket-archive/$TICKET-<timestamp>`. Don't lose history.
-- `: > ~/.claude/ticket-active/CURRENT-$PREFIX` (empty, don't delete)
 
 ## Step 6 — Confirm
 

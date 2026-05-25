@@ -5,7 +5,7 @@ disable-model-invocation: true
 
 # /ticket-plugin:merge
 
-Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), and delete the corresponding branch if cleanly merged. The local tracking dir (`~/.claude/ticket-active/$TICKET/`), the `CURRENT-$PREFIX` pointer, and the ticket description are NOT touched — those belong to `/ticket-plugin:archive`, which the user runs separately once the ticket has reached a terminal state.
+Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), and delete the corresponding branch if cleanly merged. The local tracking dir (`~/.claude/ticket-active/$TICKET/`) and the ticket description are NOT touched — those belong to `/ticket-plugin:archive`, which the user runs separately once the ticket has reached a terminal state.
 
 End-to-end "ship it" path for the code side only. Irreversible. Confirms once before remote operations, and the confirmation shows the specific computed next state so the user knows what they're agreeing to. After completion, the summary classifies the post-transition state (terminal vs intermediate) and tells the user whether to run `/ticket-plugin:archive` now or wait for QA.
 
@@ -13,7 +13,7 @@ End-to-end "ship it" path for the code side only. Irreversible. Confirms once be
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
@@ -21,14 +21,18 @@ If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in 
 
 Optional `--pr <N>` to disambiguate when the current branch has more than one open PR. Optional `--strategy <squash|merge|rebase>` to override the default. Default strategy is `squash`.
 
-The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains. If empty: `"No active $PREFIX ticket to merge."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to merge."` and stop.
 
 ## Pre-flight
 
 Run these in parallel:
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty or missing: stop.
-- Verify `~/.claude/ticket-active/$TICKET/` exists. If not, state corruption — stop without writing anything.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 - `$BRANCH` = `git branch --show-current`. If on the main branch (`main` or `master`): refuse with `"Refusing to merge: cwd is on the main branch, not a feature branch."`
 - `$DIRTY` = `git status --porcelain`. If non-empty: refuse with `"Refusing: working tree has uncommitted changes. Commit or stash first."`
 - `$AHEAD` = `git rev-list --count @{upstream}..HEAD` (or `0` if no upstream). If non-zero: refuse with `"Refusing: branch has N commits not pushed to origin. Push first."`
@@ -124,7 +128,7 @@ Show the full plan and get explicit approval. This is the only confirmation prom
 > 2. **Advance** $TICKET on $SYSTEM by one state: `<current state name>` → `<computed next state name>`. (Or `"<current> — already terminal, no transition needed"` / `"<current> — no forward transition available on this workflow"` if applicable.) This is one step forward, NOT auto-Done. If the workflow's next state isn't what you expected, say `no` and handle it manually.
 > 3. **Switch to `$baseRefName`, pull the merge from origin, push it to any other remotes** (mirrors / forks / upstream — if `git remote` lists anything besides `origin`), then **delete the local branch** `$BRANCH` (`gh pr view` already confirmed `state: MERGED`).
 >
-> Local tracking (`~/.claude/ticket-active/$TICKET/`) and the ticket description are **NOT** touched by this command. `CURRENT-$PREFIX` will still point at $TICKET when this finishes. After the merge, the summary will tell you whether to run `/ticket-plugin:archive` now (ticket landed in a terminal Done-type state) or to wait until QA/review completes (ticket landed in an intermediate state like `In Review`).
+> Local tracking (`~/.claude/ticket-active/$TICKET/`) and the ticket description are **NOT** touched by this command. After the merge, the summary will tell you whether to run `/ticket-plugin:archive` now (ticket landed in a terminal Done-type state) or to wait until QA/review completes (ticket landed in an intermediate state like `In Review`).
 >
 > <soft-warning summary if any: BLOCKED / BEHIND / failing checks / no review approval>
 >
@@ -222,7 +226,7 @@ Remotes: $baseRefName pushed to <list of non-origin remotes>
          ( or "origin only" / "skipped (merge-only)" )
 Branch:  local $BRANCH deleted; remote feature branch deleted by gh pr merge
          ( or "untouched (merge-only)" )
-Local:   ticket-active/$TICKET/ untouched; CURRENT-$PREFIX still points to $TICKET
+Local:   ticket-active/$TICKET/ untouched
 ```
 
 ### Next-step recommendation
@@ -288,7 +292,7 @@ Next step:
 
 - Confirms ONCE in Step 3 before any destructive remote action. After that, run to completion or fail loudly.
 - **The ticket transition advances by ONE state in the workflow, not auto-Done.** Same-bucket transitions are preferred (e.g., "In Progress" → "In Review" over "In Progress" → "Done") so the team's review / QA gates aren't skipped. If the workflow has no intermediate state and the only forward option is Done, then Done is what happens — but that's because Done IS the next state, not because the skill assumed it. The proposed target is shown in Step 3's confirmation prompt; the user can say `no` if it isn't right.
-- **Does NOT touch local tracking or push the task plan to the ticket.** `~/.claude/ticket-active/$TICKET/` stays in place, `CURRENT-$PREFIX` still points at $TICKET, and `task_plan.md` / `findings.md` are not pushed. `/ticket-plugin:archive` does all of that — and the user invokes it separately, once the ticket has actually reached a terminal state on the workflow (typically after QA). This separation exists because `:merge`'s "advance one state" frequently lands the ticket in an intermediate state like "In Review" that QA still needs to act on; pushing the task plan to the description and moving the local tracking dir out at that point would both be premature.
+- **Does NOT touch local tracking or push the task plan to the ticket.** `~/.claude/ticket-active/$TICKET/` stays in place, and `task_plan.md` / `findings.md` are not pushed. `/ticket-plugin:archive` does all of that — and the user invokes it separately, once the ticket has actually reached a terminal state on the workflow (typically after QA). This separation exists because `:merge`'s "advance one state" frequently lands the ticket in an intermediate state like "In Review" that QA still needs to act on; pushing the task plan to the description and moving the local tracking dir out at that point would both be premature.
 - **Step 7 always tells the user whether to run `/ticket-plugin:archive` now or wait.** Terminal-state classification of the post-transition state: JIRA `statusCategory.key === "done"`, Linear `state.type === "completed"`. Terminal → ✅ recommend `:archive` now. Non-terminal → ⚠️ warn to wait until QA sign-off. No forward transition possible, or merge-only path → ⏸ neutral note ("when ready, transition manually first").
 - All-or-nothing on the PR merge (Step 4). If it fails, no other state changes.
 - The ticket transition (Step 5) is best-effort after the merge — surface failures but don't roll back. The PR is already merged; we can't un-ship.

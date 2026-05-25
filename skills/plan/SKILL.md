@@ -13,7 +13,7 @@ Three explicit confirmation gates: before committing on the user's behalf (if tr
 
 Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
 If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
@@ -30,11 +30,16 @@ The constraint is **literal** — out-of-scope work is excluded from the plan ev
 
 If `$ARGUMENTS` is empty, the plan covers everything implied by the ticket's description.
 
-The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains. If empty: `"No active $PREFIX ticket to plan. Run /ticket-plugin:start first."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to plan. Run /ticket-plugin:start first."` and stop.
 
 ## Pre-flight (run in parallel)
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty: stop.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 - Verify `~/.claude/ticket-active/$TICKET/task_plan.md` exists. If not: state corruption — stop.
 - `$BRANCH` = `git branch --show-current`. If on the main/master branch: refuse with `"Refusing to plan agent fanout from the main branch. Switch to a feature branch first."`
 - `$BASE_SHA` = `git rev-parse HEAD` (the exact fork point if we end up launching agents).
