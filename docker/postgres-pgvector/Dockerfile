@@ -2,16 +2,29 @@
 
 # Postgres 18 + pgvector base image for the ticket-rag service container.
 #
-# This is the database-only building block (BILL-12) of the larger
-# ticket-rag service container (BILL-13 umbrella). Python/FastAPI, model
-# bake-in, and entrypoint orchestration layer on top via BILL-14 / BILL-15
-# / BILL-17.
+# Layers:
+#   BILL-12 — postgres + pgvector base + trust-auth init script.
+#   BILL-16 — ticket_chunks schema applied at cluster init.
+#   BILL-14 — Python 3.12 + FastAPI runtime + placeholder /healthz app (this).
+#   BILL-15 — encoder + reranker model files (future).
+#   BILL-17 — single entrypoint orchestrating postgres + uvicorn (future).
 #
 # WARNING — TRUST AUTH IS ON. Every connection method (Unix socket,
 # IPv4, IPv6) is configured to accept any user without a password.
 # This image is intended to run on 127.0.0.1 only, behind no network.
 # Do not expose to any untrusted network.
 
+# ----------------------------------------------------------------------
+# Stage 1: Python 3.12 source. Debian 12 bookworm ships python3.11 only;
+# the official python:3.12-slim-bookworm image is built on the same
+# Debian 12 base, so /usr/local can be copied straight into the postgres
+# image with matching glibc / OpenSSL ABIs.
+# ----------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS python-stage
+
+# ----------------------------------------------------------------------
+# Stage 2: postgres+pgvector base with Python layered on top.
+# ----------------------------------------------------------------------
 FROM pgvector/pgvector:0.8.2-pg18
 
 # POSTGRES_HOST_AUTH_METHOD=trust tells the upstream entrypoint to write
@@ -32,7 +45,33 @@ COPY --chmod=0755 init-trust-auth.sh /docker-entrypoint-initdb.d/00-trust-auth.s
 COPY schema/ /docker-entrypoint-initdb.d/schema/
 COPY --chmod=0755 init-schema.sh /docker-entrypoint-initdb.d/01-schema.sh
 
+# Python 3.12 from the multi-stage source. /usr/local holds the interpreter,
+# pip, and site-packages — copying it whole gives us a working Python without
+# pulling deadsnakes or building from source.
+COPY --from=python-stage /usr/local /usr/local
+# Library dependency sentence-transformers needs at runtime; rest of the
+# base image's apt state is left untouched.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Sanity-check that the Python copy is functional before pip runs.
+RUN python3 --version && pip3 --version
+
+# Pinned runtime deps. requirements.txt edits bust this layer; app code
+# edits below do not.
+COPY requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+
+# Placeholder FastAPI app. Real endpoints land in future tickets.
+COPY app/ /app/app/
+
 EXPOSE 5432
+# BILL-14: FastAPI listens on 127.0.0.1:7777 per design doc. BILL-17 will
+# add an entrypoint that starts uvicorn alongside postgres; for now the
+# user runs `docker exec -d <c> python3 -m uvicorn app.main:app
+# --host 127.0.0.1 --port 7777` manually after `docker run`.
+EXPOSE 7777
 
 # CMD and ENTRYPOINT are inherited from pgvector/pgvector:pg18, which
 # inherits the standard postgres entrypoint. SIGTERM → fast shutdown is
