@@ -1,0 +1,11 @@
+# ticket-rag service runtime dependencies (BILL-14).
+#
+# Pinned for reproducibility. Bumps land as deliberate edits, not pip drift.
+# All packages must support Python 3.12 on linux/arm64 and linux/amd64.
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sentence-transformers==3.3.1
+psycopg[binary]==3.2.3
+httpx==0.28.1
+click==8.1.8
