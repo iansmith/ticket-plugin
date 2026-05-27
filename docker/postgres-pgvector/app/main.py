@@ -1,11 +1,15 @@
-"""Placeholder FastAPI app for the ticket-rag service (BILL-14).
+"""FastAPI app for the ticket-rag service.
 
-Only /healthz is wired up. Real endpoints land in future tickets. The point
-of this module is to prove that Python + FastAPI + a postgres connection
-work inside the container.
+Only /healthz is wired up so far. Real query endpoints land in future
+tickets under the BILL-13 umbrella.
 
 Trust auth: connects as `postgres` over localhost with no password. See
 init-trust-auth.sh in this directory for the auth configuration.
+
+/healthz reports two subsystems (postgres reachability + schema presence)
+and is expected to be polled at Docker-healthcheck cadence (~1/min). Each
+call does one tiny `SELECT 1` + one `SELECT to_regclass(...)` round-trip;
+this is fine at one-per-minute. Do not poll in tight loops.
 """
 
 from fastapi import FastAPI
@@ -15,7 +19,7 @@ import psycopg
 app = FastAPI()
 
 # Short connect timeout so the degraded path responds well under 2 seconds
-# even if postgres is fully down (ticket acceptance criterion).
+# even if postgres is fully down.
 _CONN_STR = "dbname=postgres user=postgres host=localhost connect_timeout=1"
 
 
@@ -24,11 +28,16 @@ def healthz():
     try:
         with psycopg.connect(_CONN_STR) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
+                cur.execute("SELECT to_regclass('public.ticket_chunks') IS NOT NULL")
+                (schema_ok,) = cur.fetchone()
     except psycopg.OperationalError:
         return JSONResponse(
             status_code=503,
-            content={"status": "degraded", "postgres": "unreachable"},
+            content={"postgres": "unreachable", "schema": "unknown"},
         )
-    return {"status": "ok", "postgres": "reachable"}
+
+    body = {
+        "postgres": "ok",
+        "schema": "ok" if schema_ok else "missing",
+    }
+    return body if schema_ok else JSONResponse(status_code=503, content=body)
