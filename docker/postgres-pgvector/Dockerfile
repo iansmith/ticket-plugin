@@ -37,17 +37,6 @@ ENV POSTGRES_HOST_AUTH_METHOD=trust
 # connections — so the replaced pg_hba.conf applies on the post-init start.
 COPY --chmod=0755 init-trust-auth.sh /docker-entrypoint-initdb.d/00-trust-auth.sh
 
-# BILL-16 schema files. Applied by /entrypoint.sh (BILL-17) on every start,
-# idempotently — every CREATE in schema/*.sql uses IF NOT EXISTS, which is
-# a hard repo convention for any file landing under this directory. Future
-# migrations land as additional schema/NNN_*.sql; the entrypoint picks them
-# up in filename order.
-#
-# init-schema.sh is NOT copied to /docker-entrypoint-initdb.d/ anymore — the
-# entrypoint applies schema directly. Doing both would just run the same SQL
-# twice on first init (harmless because idempotent, but noisy).
-COPY schema/ /docker-entrypoint-initdb.d/schema/
-
 # Python 3.12 from the multi-stage source. /usr/local holds the interpreter,
 # pip, and site-packages — copying it whole gives us a working Python without
 # pulling deadsnakes or building from source.
@@ -109,18 +98,39 @@ COPY models/bge-reranker-v2-m3 /models/bge-reranker-v2-m3
 
 ENV HF_HUB_OFFLINE=1
 
-# FastAPI app — currently /healthz only. Real query endpoints land in future
-# tickets under the BILL-13 umbrella.
-COPY app/ /app/app/
-
-EXPOSE 5432
-EXPOSE 7777
+# BILL-16 schema files. Applied by /entrypoint.sh (BILL-17) on every start,
+# idempotently — every CREATE in schema/*.sql uses IF NOT EXISTS, which is
+# a hard repo convention for any file landing under this directory. Future
+# migrations land as additional schema/NNN_*.sql; the entrypoint picks them
+# up in filename order.
+#
+# Placement: AFTER the model COPYs and BEFORE the entrypoint + app COPYs.
+# Schema evolves more often than models or system deps, so it sits low in the
+# stack to keep those upstream layers cached when schema changes. It still
+# sits above app/ — app code changes most frequently and stays last for
+# maximum cache reuse per BILL-18's layer-cache acceptance.
+COPY schema/ /docker-entrypoint-initdb.d/schema/
 
 # BILL-17 entrypoint: starts postgres via the upstream entrypoint, waits for
 # readiness, re-applies schema idempotently, then launches uvicorn under a
 # small shell-based supervisor. SIGTERM is propagated to both children with
 # pg_ctl -m fast stop on postgres. See entrypoint.sh's header for the full
 # process-supervisor rationale and failure-mode notes.
+#
+# Placement: above the app COPY because entrypoint.sh changes less often
+# than app code. Editing only app/main.py shouldn't invalidate this layer.
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
+
+# FastAPI app — currently /healthz only. Real query endpoints land in future
+# tickets under the BILL-13 umbrella.
+#
+# Placement: LAST cacheable layer. Per BILL-18's layer-cache acceptance,
+# everything above this line stays CACHED when only app code changes; only
+# this COPY layer rebuilds.
+COPY app/ /app/app/
+
+EXPOSE 5432
+EXPOSE 7777
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD []
