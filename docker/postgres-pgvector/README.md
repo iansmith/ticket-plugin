@@ -18,9 +18,11 @@ Every postgres connection method (Unix socket, IPv4, IPv6) accepts any user with
 - **Entrypoint:** `entrypoint.sh` is a small shell-based supervisor. See [Entrypoint & process supervisor](#entrypoint--process-supervisor) below.
 - **Data directory:** expected to be host-mounted at **`/var/lib/postgresql`** (the new pg18+ convention — the upstream image creates a major-version subdirectory like `/var/lib/postgresql/18/docker/` underneath, so the same mount can later hold both a pg18 and pg19 cluster for `pg_upgrade --link`). The image carries no baked-in cluster data. See [docker-library/postgres#1259](https://github.com/docker-library/postgres/pull/1259) for background.
 
-## Image size
+## Image size and disk requirements
 
 **Image size:** ~5.7 GB (measured against `ticket-plugin/rag:latest` as of BILL-18 — `docker image inspect ... --format '{{.Size}}'` divided by 1024³). The bulk is the bge-m3 and reranker model weights (~4.5 GB combined) plus the Python + ML stack from `requirements.txt` (~700 MB resident). Shrinking toward the design doc's ~3 GB target (multi-stage Python build, fp16 weights, etc.) is a follow-up — out of scope for BILL-18.
+
+**Peak Docker disk during a from-scratch build:** ~12-13 GB. Breakdown — `pgvector/pgvector:0.8.2-pg18` + `python:3.12-slim-bookworm` base images (~1.5 GB combined) + transient build state (pip downloads, dpkg unpacks, model COPYs in flight ≈ 4-5 GB) + the final 6 GB image being exported. A clean Docker Desktop install with its default VM allocation (typically 64 GB) has plenty of headroom. If disk pressure shows up after many rebuild cycles, `make rag-clean-deep` clears both the rag images and the BuildKit cache.
 
 ## Build
 
@@ -98,10 +100,13 @@ Clean stop is expected to complete within ~10 seconds. The container exits with 
 ## Cleanup
 
 ```bash
-make rag-clean
+make rag-clean         # remove ticket-plugin/rag images + smoke-test container
+make rag-clean-deep    # all of the above, PLUS prune BuildKit's build cache
 ```
 
-Removes the `ticket-plugin/rag` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Does NOT touch the host's `pgdata/` directory or any other data you mounted — that's your data, not ours to delete.
+`rag-clean` removes the `ticket-plugin/rag` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Reach for `rag-clean-deep` when Docker Desktop VM disk pressure accumulates from repeated builds — it adds `docker builder prune -a -f` which reclaims the layer cache.
+
+Neither target touches the host's `pgdata/` directory or any other data you mounted — that's your data, not ours to delete.
 
 ## Entrypoint & process supervisor
 

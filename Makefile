@@ -4,10 +4,13 @@
 # service container. Documented in docker/postgres-pgvector/README.md.
 #
 # Targets:
-#   rag-build  — build the image with both :<git-sha> and :latest tags
-#   rag-run    — build (if needed) and run the BILL-17 end-to-end smoke test
-#   rag-clean  — remove the ticket-plugin/rag images and any leftover
-#                smoke-test container
+#   rag-build       — build the image with both :<git-sha> and :latest tags
+#   rag-run         — build (if needed) and run the BILL-17 end-to-end smoke test
+#   rag-clean       — remove the ticket-plugin/rag images and any leftover
+#                     smoke-test container
+#   rag-clean-deep  — rag-clean plus a full BuildKit cache prune. Use when
+#                     Docker Desktop VM disk pressure accumulates from
+#                     repeated builds.
 #
 # Run from the repo root.
 
@@ -15,7 +18,7 @@ DOCKER_DIR := docker/postgres-pgvector
 IMAGE_NAME := ticket-plugin/rag
 GIT_SHA    := $(shell git rev-parse --short HEAD)
 
-.PHONY: rag-build rag-run rag-clean
+.PHONY: rag-build rag-run rag-clean rag-clean-deep
 
 rag-build:
 	docker build \
@@ -30,3 +33,6 @@ rag-clean:
 	-docker rm -f ticket-rag-bill17-verify 2>/dev/null
 	-IMG_IDS=$$(docker images -q $(IMAGE_NAME) 2>/dev/null); \
 	  if [ -n "$$IMG_IDS" ]; then docker rmi -f $$IMG_IDS; fi
+
+rag-clean-deep: rag-clean
+	docker builder prune -a -f
