@@ -1,5 +1,5 @@
 ---
-description: Replace the active ticket's empty Plan section with a thorough, parallelism-aware plan grounded in real codebase investigation, starting with a Phase 0 that writes RED tests for the expected behavior. Use /ticket-plugin:plan [constraint] — the optional textual constraint scopes BOTH the investigation and the resulting plan literally. Phase 0's red tests anchor each work item's "Done when" criteria. The skill confirms before destructive actions (commit before fanout, agent launch, auto-merge); auto-stops hard-stuck agents (60+ min no commits AND repeating errors); never auto-merges without your explicit yes.
+description: Replace the active ticket's empty Plan section with a thorough, parallelism-aware plan grounded in real codebase investigation, starting with a Phase 0 that writes RED tests for the expected behavior. Also drafts a client-readable Definition of Done (plain-language observable outcomes) that ends up at the top of the ticket description on archive. Use /ticket-plugin:plan [constraint] — the optional textual constraint scopes BOTH the investigation and the resulting plan literally. Phase 0's red tests anchor each work item's "Done when" criteria. The skill confirms before destructive actions (commit before fanout, agent launch, auto-merge); auto-stops hard-stuck agents (60+ min no commits AND repeating errors); never auto-merges without your explicit yes.
 disable-model-invocation: true
 ---
 
@@ -11,11 +11,11 @@ Three explicit confirmation gates: before committing on the user's behalf (if tr
 
 ## Project scope (every ticket skill follows this rule)
 
-Read `.project-prefix` from cwd. It contains a single prefix like `LOU`, `MAZ`, or `PLTF`. Call that value `$PREFIX`.
+Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-prefix` is missing in cwd: stop with `"No .project-prefix in cwd. Create one (e.g. echo MAZ > .project-prefix) and retry."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -30,11 +30,16 @@ The constraint is **literal** — out-of-scope work is excluded from the plan ev
 
 If `$ARGUMENTS` is empty, the plan covers everything implied by the ticket's description.
 
-The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains. If empty: `"No active $PREFIX ticket to plan. Run /ticket-plugin:start first."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to plan. Run /ticket-plugin:start first."` and stop.
 
 ## Pre-flight (run in parallel)
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty: stop.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 - Verify `~/.claude/ticket-active/$TICKET/task_plan.md` exists. If not: state corruption — stop.
 - `$BRANCH` = `git branch --show-current`. If on the main/master branch: refuse with `"Refusing to plan agent fanout from the main branch. Switch to a feature branch first."`
 - `$BASE_SHA` = `git rev-parse HEAD` (the exact fork point if we end up launching agents).
@@ -218,7 +223,43 @@ Append to `findings.md`:
 <fragile areas, tricky logic, places ripple unexpectedly>
 ```
 
-## Step 2 — Draft the plan
+## Step 2 — Draft the Definition of Done and the technical plan
+
+Two related artifacts get written to `task_plan.md`: a client-readable **Definition of Done** (Step 2a, new in this section position) followed by the detailed technical **Plan** (Step 2b, the existing plan structure). Both come from the same source — the ticket description + Phase 0's red tests + Phase 1's investigation — but they speak to different audiences.
+
+### 2a. Draft the Definition of Done (client-readable)
+
+Audience: the person who filed the ticket (often a non-engineer client) and anyone reading the ticket later trying to figure out "was this actually done?". This section is **plain language, observable outcomes**, not implementation criteria.
+
+Write it ABOVE the `## Original description` section so it appears at the top of the ticket description after `:archive` pushes the body. Format:
+
+```markdown
+## Definition of Done
+
+This ticket will be considered complete when ALL of the following are true and observable:
+
+1. **<plain-language outcome — what changes from the client's perspective>**
+   How to verify: <a concrete check the client can do without reading code — e.g., "create subscription A, renew it pointing at endpoint B, send a test webhook, observe it lands at B not A">
+
+2. **<plain-language outcome>**
+   How to verify: <observable check>
+
+...
+
+If any of these aren't true at delivery, the ticket isn't done.
+```
+
+Guidelines:
+
+- Items describe **what the client will observe**, not what the engineer will build. ("Renewed-subscription webhooks deliver to the renewed endpoint" — yes. "Dispatcher resolves subscriber at delivery time" — no, that's implementation.)
+- Each item has a `How to verify:` that a non-engineer could execute. Reference UIs, dashboards, observable behavior, error messages. Don't reference test names or code symbols.
+- **Avoid jargon.** No mentions of test fixtures, MCP tools, internal class names. The DoD is the part of `task_plan.md` that's literally written for the client to read.
+- 2–5 items is typical. More usually means the ticket is too big and should be split.
+- The DoD's items map 1:1 (or many-to-one) to Phase 0's red tests internally — the red tests are *how the engineer verifies the DoD*. But the DoD itself doesn't mention the tests.
+
+If `$ARGUMENTS` excludes certain behavior from scope, the DoD must reflect that — explicitly list any in-scope ticket behaviors the constraint dropped, so the client doesn't expect them.
+
+### 2b. Draft the technical Plan
 
 Write the plan into `task_plan.md`'s `## Plan` section (replacing or augmenting per the pre-flight decision). The plan must be detailed enough that a separate Claude session could pick up an item and execute it without re-reading the codebase.
 
@@ -569,6 +610,7 @@ Next: /ticket-plugin:pr to open a PR for review.
 ## Rules
 
 - **Phase 0 is mandatory** unless the user explicitly says `skip` when asked for the test command. The "Done when" criteria in the Step-2 plan are anchored to red tests turning green — without them, the plan loses its objective verification.
+- **`task_plan.md` ends up with two complementary artifacts**: the client-readable Definition of Done (Step 2a — plain language, observable outcomes; ends up at the top of the ticket description on archive) and the technical Plan (Step 2b — test-anchored work items; ends up below the DoD). The DoD is what the client reads; the Plan is what the engineer (or the next AI session) reads.
 - **Phase 0 surprises matter**: if the red tests pass on current code, surface that to the user. Either the bug is already fixed (the ticket is stale), or the tests aren't exercising the right behavior. Either way, the user needs to know before proceeding.
 - **Three confirmation gates**: Step 4 (clean tree + base SHA + agent count), Step 6 (launch agents), Step 9 (auto-merge). The user can abort at any of them.
 - **Worktree isolation is the contract**: agents are told the constraint in their prompt, and `Agent(isolation: "worktree")` enforces it at the tool level. Both belt and suspenders.

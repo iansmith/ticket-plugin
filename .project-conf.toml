@@ -1,0 +1,8 @@
+system = "github"
+key    = "iansmith/ticket-plugin"
+prefix = "BILL"
+
+[status_labels]
+in_progress = "status:in-progress"
+# 3-state workflow: no in_review label.
+# Add  in_review = "status:in-review"  here to upgrade to 4-state.

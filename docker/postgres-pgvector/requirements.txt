@@ -1,0 +1,28 @@
+# ticket-rag service runtime dependencies (BILL-14).
+#
+# Pinned for reproducibility. Bumps land as deliberate edits, not pip drift.
+# All packages must support Python 3.12 on linux/arm64 and linux/amd64.
+#
+# BILL-21 — PyTorch CPU-only wheel index.
+#
+# torch is a transitive dependency of sentence-transformers. Without the
+# CPU-only index below, pip resolves the default PyPI wheel which bundles
+# ~3 GB of NVIDIA CUDA runtime libraries (nvidia-cublas, nvidia-cudnn, etc.)
+# These libraries are useless on Apple Silicon and any CPU-only deployment
+# of this service — the ticket-rag service runs sentence-transformers
+# inference on CPU only (no GPU is provisioned).
+#
+# DO NOT REMOVE the --extra-index-url line or unpin torch's +cpu suffix
+# without coordinated review: doing so re-adds ~3 GB to the image. The
+# explicit torch pin below forces pip to fetch the +cpu wheel from
+# download.pytorch.org, which sentence-transformers then uses transitively.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+torch==2.8.0+cpu
+sentence-transformers==3.3.1
+psycopg[binary]==3.2.3
+httpx==0.28.1
+click==8.1.8

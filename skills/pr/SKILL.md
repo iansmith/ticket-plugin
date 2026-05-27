@@ -1,5 +1,5 @@
 ---
-description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /ticket-plugin:pr to (1) run Claude Code's simplify skill on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
+description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /ticket-plugin:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
 disable-model-invocation: true
 ---
 
@@ -11,11 +11,11 @@ Confirms before each significant remote action. Stops after presenting CodeRabbi
 
 ## Project scope (every ticket skill follows this rule)
 
-Read `.project-prefix` from cwd. It contains a single prefix like `LOU`, `MAZ`, or `PLTF`. Call that value `$PREFIX`.
+Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project key, or GitHub `owner/repo`) and call it `$PREFIX`. Also note `system` (`linear` | `jira` | `github`) for downstream logic.
 
-**Only operate on `$PREFIX`'s tickets. Never read, write, or clear `CURRENT-*` files for any other prefix.**
+**Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-prefix` is missing in cwd: stop with `"No .project-prefix in cwd. Create one (e.g. echo MAZ > .project-prefix) and retry."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -24,12 +24,16 @@ Optional `--no-simplify` to skip Step 1's simplify pass.
 Optional `--no-test` to skip Step 2's pre-commit test run.
 Optional `--no-poll` to open the PR and stop without waiting for CodeRabbit.
 
-The active ticket is whatever `~/.claude/ticket-active/CURRENT-$PREFIX` contains. If empty: `"No active $PREFIX ticket to PR."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to PR."` and stop.
 
 ## Pre-flight (run in parallel)
 
-- `$TICKET` = contents of `~/.claude/ticket-active/CURRENT-$PREFIX`. If empty: stop.
-- Verify `~/.claude/ticket-active/$TICKET/` exists. If not: state corruption — stop without writing anything.
+- **Resolve active ticket from branch.** Parse `$TICKET` from the current git branch:
+  - `$BRANCH = $(git branch --show-current)`
+  - Find the first match of `$PREFIX-\d+` in `$BRANCH` (case-insensitive on `$PREFIX`; canonical-case the result).
+  - No match → stop with `"Branch '$BRANCH' does not encode a $PREFIX ticket ID. Check out a ticket branch first, or run :start / :exp to create one."`
+  - Match → `$TICKET` (e.g. `MAZ-43`, `BILL-2`).
+- **In-flight check.** Verify `~/.claude/ticket-active/$TICKET/` exists. If not: stop with `"$TICKET is not in-flight. Run :start $TICKET first."`
 - `$BRANCH` = `git branch --show-current`. If on the main/master branch: refuse with `"Refusing: on the main branch, not a feature branch."`
 - `$DIRTY` = `git status --porcelain` (used in Step 1 and Step 2).
 - `$DEFAULT_BRANCH` = `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` (cache for Step 4c).
@@ -44,11 +48,15 @@ Skip if `--no-simplify` was passed, OR if `$DIRTY` is empty (nothing to simplify
 The goal: catch reuse/quality/efficiency issues before they land in a commit, since simplify works best on uncommitted work. Approach:
 
 1. Snapshot the current diff: `git diff > /tmp/pr-before-simplify.diff && git diff --staged >> /tmp/pr-before-simplify.diff`.
-2. Invoke the `simplify` skill via the Skill tool:
+2. Invoke the code-simplifier agent via the Agent tool:
    ```
-   Skill(skill: "simplify")
+   Agent(
+     subagent_type: "code-simplifier",
+     description: "Simplify uncommitted changes",
+     prompt: "Review the uncommitted changes in this working tree (against HEAD). Identify and simplify dead code, duplicated logic, over-eager defensive coding, and unnecessary complexity that crept in during implementation. Apply the simplifications directly to the working tree. The user will review the resulting diff before committing. Do not change behavior — only structure, readability, and redundancy."
+   )
    ```
-3. If the Skill tool reports `simplify` is unavailable in this session: print `"simplify skill not available — install Claude Code's bundled skills, or proceed without it."` and ask `"Continue without simplify? (yes / no)"`. On `no`: stop.
+3. If the Agent tool reports `code-simplifier` is unavailable in this session: print `"code-simplifier agent not available — install Claude Code's bundled agents, or proceed without it."` and ask `"Continue without simplify? (yes / no)"`. On `no`: stop.
 4. After simplify completes, capture the post-state diff the same way: `git diff > /tmp/pr-after-simplify.diff && git diff --staged >> /tmp/pr-after-simplify.diff`.
 5. Compare the two diffs:
    - **Identical** — simplify found nothing to fix. Continue silently to Step 2.
@@ -215,10 +223,11 @@ On comment-add failure: warn (`"Couldn't post the CodeRabbit trigger comment: <e
 
 Skip if `--no-poll` was passed.
 
-We're polling for **substantive** feedback — inline review comments or a finalized review summary. Do NOT exit early on CodeRabbit's first "walkthrough" or "I'm working on it" comment — those are acknowledgements, not the actual review. The substantive content appears as:
+We're polling for **completion** — CodeRabbit having finished its review of this PR. That can take any of three observable forms:
 
-- **Inline review comments** at `repos/$OWNER/$REPO/pulls/$PR/comments` — these are the line-level suggestions.
-- **Finalized review summaries** at `repos/$OWNER/$REPO/pulls/$PR/reviews` with `state ∈ {CHANGES_REQUESTED, APPROVED}`. A `state == COMMENTED` review can be just an ack — don't count those.
+- **Inline review comments** at `repos/$OWNER/$REPO/pulls/$PR/comments` — line-level suggestions. Non-zero count means CodeRabbit flagged at least one item.
+- **Finalized review summaries** at `repos/$OWNER/$REPO/pulls/$PR/reviews` with `state ∈ {CHANGES_REQUESTED, APPROVED, COMMENTED}`. (Empirically, current CodeRabbit posts most or all reviews as `COMMENTED` — the state field isn't a reliable signal of intent, just an artifact of how CodeRabbit submits. Treat any review authored by `coderabbitai[bot]` as a completion signal, regardless of state. The earlier exclusion of `COMMENTED` caused PRs to time out at 15 min when CodeRabbit had actually finished — see `<!-- walkthrough_start -->` marker logic below as the cross-check.)
+- **A completed walkthrough comment** at `repos/$OWNER/$REPO/issues/$PR/comments` from `coderabbitai[bot]` whose body contains a CodeRabbit completion marker. The reliable markers, validated against current CodeRabbit output, are the HTML comment `<!-- walkthrough_start -->` and the section heading `## Walkthrough` — CodeRabbit inserts these only when the walkthrough body has been populated, not when the comment is still in its early "I'm reviewing this..." placeholder form. The legacy markers `"Summary by CodeRabbit"`, `"No actionable comments"`, and `"Actionable comments posted:"` are kept as fallbacks for older CodeRabbit versions, but the first two markers above match 100% of current walkthroughs. This is the **zero-findings path** — CodeRabbit ran, may have had nothing to flag (no Review object, no inline comments), but the walkthrough comment is the signal that it finished.
 
 Prefer `gh api` for polling regardless of `$BACKEND` (it's simpler and read-only). If gh isn't installed and you're MCP-only, use the MCP list-comments tool.
 
@@ -229,9 +238,19 @@ for i in $(seq 1 15); do
   inline_count=$($GH api "repos/$OWNER/$REPO/pulls/$PR/comments" \
     --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | length')
   review_count=$($GH api "repos/$OWNER/$REPO/pulls/$PR/reviews" \
-    --jq '[.[] | select(.user.login=="coderabbitai[bot]" and (.state=="CHANGES_REQUESTED" or .state=="APPROVED"))] | length')
-  if [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ]; then
-    echo "CodeRabbit feedback received: $inline_count inline comments, $review_count finalized reviews"
+    --jq '[.[] | select(.user.login=="coderabbitai[bot]" and (.state=="CHANGES_REQUESTED" or .state=="APPROVED" or .state=="COMMENTED"))] | length')
+  # Zero-findings detection: CodeRabbit updates the walkthrough issue-comment with
+  # a completion marker rather than posting a Review. Without this check the loop
+  # would time out at 15 min on every clean PR.
+  walk_done=$($GH api "repos/$OWNER/$REPO/issues/$PR/comments" \
+    --jq '[.[] | select(.user.login=="coderabbitai[bot]" and
+      (.body | test("<!-- walkthrough_start -->|## Walkthrough|Summary by CodeRabbit|No actionable comments|Actionable comments posted")))] | length')
+  if [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ] || [ "$walk_done" -gt 0 ]; then
+    if [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ]; then
+      echo "CodeRabbit feedback received: $inline_count inline comments, $review_count finalized reviews"
+    else
+      echo "CodeRabbit review complete — no actionable comments"
+    fi
     break
   fi
   echo "Waiting for CodeRabbit ($i/15)..."
@@ -239,9 +258,15 @@ for i in $(seq 1 15); do
 done
 ```
 
-**Timeout (15 iterations, no substantive feedback):** print `"CodeRabbit didn't post substantive feedback in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /ticket-plugin:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
+**Timeout (15 iterations, no observable completion signal):** CodeRabbit hasn't posted inline comments, a finalized review, or a walkthrough with a completion marker after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck, the service is down, or the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take. Print `"CodeRabbit didn't post a completion signal in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /ticket-plugin:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
 
 ## Step 7 — Verify, classify, and present CodeRabbit's proposals
+
+### 7-pre. Zero-findings fast path
+
+If Step 6 broke on `walk_done` alone (i.e. `inline_count == 0` AND `review_count == 0`), skip the verification + decision tree (there's nothing to classify) and go straight to the **clean-verdict presentation** at 7d-clean below. Fetch only the walkthrough comment for the optional excerpt; skip the inline + review fetches.
+
+### 7-full. Full-findings path
 
 Fetch the full set of CodeRabbit comments:
 
@@ -340,6 +365,22 @@ Walkthrough summary:
 PR: $PR_URL
 ```
 
+### 7d-clean. Clean-verdict presentation (zero-findings fast path)
+
+When 7-pre kicked in, the output is short — there's nothing to verify or classify:
+
+```
+CodeRabbit review of PR #$PR — clean ✅
+
+CodeRabbit found no actionable comments to address.
+
+<optional: paste the "Summary by CodeRabbit" section of the walkthrough comment verbatim, indented 2 spaces, if the user might want context on what CodeRabbit looked at. Omit if the walkthrough is just generic acknowledgement text — no need to pad the output.>
+
+PR: $PR_URL
+```
+
+Continue to Step 8.
+
 **Stop after presenting.** This skill never auto-applies CodeRabbit suggestions. The user decides what to do next — apply fixes manually with their normal edit/commit flow, or re-run `/ticket-plugin:pr` after applying changes to get a fresh CodeRabbit pass.
 
 ## Step 8 — Confirm
@@ -375,4 +416,4 @@ CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 
   - **Step 5b (PR creation) fails**: print error, stop. The branch is already pushed; user can retry or open the PR via the GitHub UI.
   - **Step 5c (CodeRabbit alert comment) fails**: warn but continue. PR exists.
   - **Step 6 (poll timeout)**: not a failure — print and continue to Step 8 without Step 7 analysis.
-  - **Step 7 (analysis)**: if no inline comments after Step 6 succeeded (only the walkthrough), present the walkthrough alone and proceed to Step 8.
+  - **Step 7 (analysis)**: zero-findings case (Step 6 broke on `walk_done` only) takes the 7-pre / 7d-clean fast path — clean ✅ verdict, no verification or classification work. Non-zero takes the 7-full path with verify → classify → present. Step 6 timeout also enters Step 7 but with empty fetch results; the 7d-clean output still renders (printing `"CodeRabbit didn't post a completion signal in 15 minutes"` instead of the clean-verdict body).
