@@ -9,3 +9,8 @@
 # clone can `docker run` without first having to mkdir.
 pgdata/*
 !pgdata/.gitkeep
+
+# BILL-15 — encoder/reranker model weights baked into the image. Pre-fetched
+# on the host by fetch-models.sh into the build context, then COPYed into
+# the image. ~4.5 GB; never committed.
+docker/postgres-pgvector/models/

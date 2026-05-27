@@ -6,7 +6,7 @@
 #   BILL-12 — postgres + pgvector base + trust-auth init script.
 #   BILL-16 — ticket_chunks schema applied at cluster init.
 #   BILL-14 — Python 3.12 + FastAPI runtime + placeholder /healthz app (this).
-#   BILL-15 — encoder + reranker model files (future).
+#   BILL-15 — encoder + reranker model files baked at build time.
 #   BILL-17 — single entrypoint orchestrating postgres + uvicorn (future).
 #
 # WARNING — TRUST AUTH IS ON. Every connection method (Unix socket,
@@ -62,6 +62,22 @@ RUN python3 --version && pip3 --version
 # edits below do not.
 COPY requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r /app/requirements.txt
+
+# BILL-15 — encoder + reranker baked at image-build time.
+#
+# Models are pre-fetched on the host into ./models/ by fetch-models.sh
+# (pinned commit SHAs live there) and COPYed in here. Downloading inside
+# the build via huggingface-cli stalled reliably on the Xet protocol path
+# through Docker Desktop's VM NAT; host-side download bypasses that.
+#
+# onnx/ excluded from bge-m3 (~2.3 GB ONNX data, unused by sentence-transformers).
+# imgs/ and assets/ excluded (documentation images only).
+# NOTE: fp32 weights add ~4.54 GB; expected total image ~6 GB.
+# See BILL-13 umbrella for the measured size.
+COPY models/bge-m3 /models/bge-m3
+COPY models/bge-reranker-v2-m3 /models/bge-reranker-v2-m3
+
+ENV HF_HUB_OFFLINE=1
 
 # Placeholder FastAPI app. Real endpoints land in future tickets.
 COPY app/ /app/app/
