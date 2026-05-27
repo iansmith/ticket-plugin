@@ -52,11 +52,38 @@ COPY schema/ /docker-entrypoint-initdb.d/schema/
 # pip, and site-packages — copying it whole gives us a working Python without
 # pulling deadsnakes or building from source.
 COPY --from=python-stage /usr/local /usr/local
-# Library dependency sentence-transformers needs at runtime; rest of the
-# base image's apt state is left untouched.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+# Library dependency sentence-transformers needs at runtime: libgomp (the
+# GCC OpenMP runtime). We fetch the .deb directly from snapshot.debian.org
+# and `dpkg -i` it, instead of `apt-get update && apt-get install`.
+#
+# Why not apt-get: bookworm became Debian oldstable in 2025, and `apt-get
+# update` inside BuildKit's network sandbox fails on some networks with
+# "At least one invalid signature was encountered" against the standard
+# bookworm mirrors. The underlying signatures verify fine outside BuildKit
+# (gpgv reports GOODSIG on the same bytes), so this is a BuildKit/sandbox
+# interaction rather than a real signature problem — but the result is the
+# same: the build is unreproducible-from-scratch in that state. Pulling the
+# single .deb we actually need via ADD bypasses apt entirely and uses
+# BuildKit's own HTTP fetcher, which works.
+#
+# URL pinned to a snapshot.debian.org timestamp so the build is bit-stable
+# regardless of future Debian point-release rotations. SHA-256 verified in
+# the RUN step below so a tampered/wrong .deb is caught before install.
+# Multi-arch: TARGETARCH is set by BuildKit per build platform.
+ARG TARGETARCH
+ADD --chmod=0644 \
+    https://snapshot.debian.org/archive/debian/20251001T000000Z/pool/main/g/gcc-12/libgomp1_12.2.0-14%2Bdeb12u1_${TARGETARCH}.deb \
+    /tmp/libgomp1.deb
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        arm64) EXPECTED=a48b70dd1a95585466b40bd94564bce56ebcb2566e49ccdb6441e996aaab2098 ;; \
+        amd64) EXPECTED=48fec46bda7f5b1638b9e959889bfbc20491247d402d120bb152687eb48143d7 ;; \
+        *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    ACTUAL=$(sha256sum /tmp/libgomp1.deb | awk '{print $1}'); \
+    [ "$ACTUAL" = "$EXPECTED" ] || { echo "libgomp1.deb sha256 mismatch: got $ACTUAL, expected $EXPECTED" >&2; exit 1; }; \
+    dpkg -i /tmp/libgomp1.deb; \
+    rm /tmp/libgomp1.deb
 
 # Sanity-check that the Python copy is functional before pip runs.
 RUN python3 --version && pip3 --version
