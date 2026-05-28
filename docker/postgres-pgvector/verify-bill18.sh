@@ -17,10 +17,15 @@ PASS=0
 FAIL=0
 
 # --------------------------------------------------------------------------
-# app/main.py backup/restore trap so the layer-cache probe doesn't leave the
-# working tree dirty if the script aborts mid-check.
+# Application-code backup/restore trap so the layer-cache probe doesn't leave
+# the working tree dirty if the script aborts mid-check.
+#
+# BILL-29 relocated the FastAPI app from docker/postgres-pgvector/app/main.py
+# to rag-service/rag_service/main.py; the COPY target inside the image is
+# /app/rag_service/. APP_PATH and the layer-cache parser (Check 8 below) were
+# updated together — they must stay in sync with the Dockerfile's final COPY.
 # --------------------------------------------------------------------------
-APP_PATH="docker/postgres-pgvector/app/main.py"
+APP_PATH="rag-service/rag_service/main.py"
 APP_BACKUP=""
 restore_app() {
     if [ -n "$APP_BACKUP" ] && [ -f "$APP_BACKUP" ]; then
@@ -101,9 +106,10 @@ sys.exit(0 if documented * 0.9 <= actual_gb <= documented * 1.1 else 1)
 }
 check "README image size within +/-10% of actual ticket-plugin/rag:latest" size_match
 
-# Check 8 — layer cache: editing ONLY app/main.py and rebuilding hits cache
-# for every layer up to and including the model COPYs; only the app COPY
-# layer rebuilds. Parses `docker build` output for CACHED markers.
+# Check 8 — layer cache: editing ONLY the FastAPI app (rag_service/main.py)
+# and rebuilding hits cache for every layer up to and including the model
+# COPYs; only the rag_service COPY layer rebuilds. Parses `docker build`
+# output for CACHED markers.
 layer_cache_ok() {
     APP_BACKUP=$(mktemp -t bill18-app.XXXXXX.py)
     cp "$APP_PATH" "$APP_BACKUP"
@@ -125,16 +131,24 @@ layer_cache_ok() {
 import re, sys
 log = open(sys.argv[1]).read()
 
-# Pass 1: collect stage-1 step IDs that appear before the "COPY app/" header.
-# BuildKit may emit step headers out of numerical order due to parallel layer
-# resolution, so we collect IDs by encounter order and break on app COPY.
+# Pass 1: collect stage-1 step IDs that appear before the application-code
+# COPY header. BuildKit may emit step headers out of numerical order due to
+# parallel layer resolution, so we collect IDs by encounter order and break
+# on the app COPY.
+#
+# BILL-29: the final COPY is now
+#     COPY rag-service/rag_service/ /app/rag_service/
+# (was: COPY app/ /app/app/). Match on both source and dest so we don't
+# false-positive on the earlier `COPY rag-service/requirements.txt` step
+# which also starts with "COPY rag-service/".
 step_ids = []
 seen_app = False
 for line in log.splitlines():
     m = re.match(r'^#(\d+) \[stage-1\s+\d+/\d+\] (.*)$', line)
     if not m:
         continue
-    if 'COPY app/' in m.group(2) and '/app/app/' in m.group(2):
+    body = m.group(2)
+    if 'COPY rag-service/rag_service/' in body and '/app/rag_service/' in body:
         seen_app = True
         break
     step_ids.append(m.group(1))
@@ -158,7 +172,7 @@ missing = [s for s in step_ids if s not in cached]
 sys.exit(0 if not missing else 1)
 PY
 }
-check "layer cache: editing only app/main.py rebuilds only the app COPY layer" layer_cache_ok
+check "layer cache: editing only rag_service/main.py rebuilds only the app COPY layer" layer_cache_ok
 
 # --------------------------------------------------------------------------
 # Phase C — smoke-test integration

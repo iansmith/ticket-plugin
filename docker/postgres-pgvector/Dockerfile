@@ -35,7 +35,7 @@ ENV POSTGRES_HOST_AUTH_METHOD=trust
 
 # Init script runs after initdb, before postgres starts accepting real
 # connections — so the replaced pg_hba.conf applies on the post-init start.
-COPY --chmod=0755 init-trust-auth.sh /docker-entrypoint-initdb.d/00-trust-auth.sh
+COPY --chmod=0755 docker/postgres-pgvector/init-trust-auth.sh /docker-entrypoint-initdb.d/00-trust-auth.sh
 
 # Python 3.12 from the multi-stage source. /usr/local holds the interpreter,
 # pip, and site-packages — copying it whole gives us a working Python without
@@ -78,8 +78,8 @@ RUN set -eu; \
 RUN python3 --version && pip3 --version
 
 # Pinned runtime deps. requirements.txt edits bust this layer; app code
-# edits below do not.
-COPY requirements.txt /app/requirements.txt
+# edits below do not. Source-of-truth moved to rag-service/ in BILL-29.
+COPY rag-service/requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r /app/requirements.txt
 
 # BILL-15 — encoder + reranker baked at image-build time.
@@ -93,8 +93,8 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 # imgs/ and assets/ excluded (documentation images only).
 # NOTE: fp32 weights add ~4.54 GB; expected total image ~6 GB.
 # See BILL-13 umbrella for the measured size.
-COPY models/bge-m3 /models/bge-m3
-COPY models/bge-reranker-v2-m3 /models/bge-reranker-v2-m3
+COPY docker/postgres-pgvector/models/bge-m3 /models/bge-m3
+COPY docker/postgres-pgvector/models/bge-reranker-v2-m3 /models/bge-reranker-v2-m3
 
 ENV HF_HUB_OFFLINE=1
 
@@ -109,7 +109,7 @@ ENV HF_HUB_OFFLINE=1
 # stack to keep those upstream layers cached when schema changes. It still
 # sits above app/ — app code changes most frequently and stays last for
 # maximum cache reuse per BILL-18's layer-cache acceptance.
-COPY schema/ /docker-entrypoint-initdb.d/schema/
+COPY docker/postgres-pgvector/schema/ /docker-entrypoint-initdb.d/schema/
 
 # BILL-17 entrypoint: starts postgres via the upstream entrypoint, waits for
 # readiness, re-applies schema idempotently, then launches uvicorn under a
@@ -119,15 +119,19 @@ COPY schema/ /docker-entrypoint-initdb.d/schema/
 #
 # Placement: above the app COPY because entrypoint.sh changes less often
 # than app code. Editing only app/main.py shouldn't invalidate this layer.
-COPY --chmod=0755 entrypoint.sh /entrypoint.sh
+COPY --chmod=0755 docker/postgres-pgvector/entrypoint.sh /entrypoint.sh
 
 # FastAPI app — currently /healthz only. Real query endpoints land in future
 # tickets under the BILL-13 umbrella.
 #
+# BILL-29 relocated the package from docker/postgres-pgvector/app/ to
+# rag-service/rag_service/. Import path inside the container is now
+# rag_service.main:app (see entrypoint.sh's uvicorn invocation).
+#
 # Placement: LAST cacheable layer. Per BILL-18's layer-cache acceptance,
 # everything above this line stays CACHED when only app code changes; only
 # this COPY layer rebuilds.
-COPY app/ /app/app/
+COPY rag-service/rag_service/ /app/rag_service/
 
 EXPOSE 5432
 EXPOSE 7777

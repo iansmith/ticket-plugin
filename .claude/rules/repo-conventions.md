@@ -60,6 +60,7 @@ This file is loaded by Claude Code (and Claude Desktop) when working inside this
 - All commits anchored to a ticket get `[TICKET-KEY]` prefix in the subject and `Refs: TICKET-KEY` (or `Closes:` on the final commit) trailer.
 - Co-Authored-By trailer on all Claude-assisted commits: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - Never `git push --force`, `git commit --no-verify`, `gh pr merge --admin`, or `git reset --hard` — none of these have a place in this repo's flow.
+- **Run the full test suite before pausing to ask about a commit.** When working in a batched plan (or any multi-step change), do NOT pause and ask "ready to commit?" with unverified code in the working tree. Run every relevant test layer first — unit tests (`pytest`) AND the Docker-level smoke tests (`verify-billN.sh`) when changes touch anything the image build sees — and surface the actual results in the consult message. The pause is for the human to approve a *known-green* state, not to ratify untested work. If a layer can't run locally (e.g. image build is broken, registry unreachable), say so explicitly in the consult — don't silently skip.
 
 ## Python+FastAPI work in `rag-service/`
 

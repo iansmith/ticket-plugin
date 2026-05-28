@@ -20,11 +20,17 @@ GIT_SHA    := $(shell git rev-parse --short HEAD)
 
 .PHONY: rag-build rag-run rag-clean rag-clean-deep
 
+# Build context is the repo root (not $(DOCKER_DIR)/) so the Dockerfile can
+# COPY from rag-service/ alongside the docker/ assets. BILL-29 relocated the
+# application code from docker/postgres-pgvector/app/ to rag-service/; the
+# Dockerfile path stays at $(DOCKER_DIR)/Dockerfile. A repo-root .dockerignore
+# keeps the build context small.
 rag-build:
 	docker build \
+		-f $(DOCKER_DIR)/Dockerfile \
 		-t $(IMAGE_NAME):$(GIT_SHA) \
 		-t $(IMAGE_NAME):latest \
-		$(DOCKER_DIR)/
+		.
 
 rag-run: rag-build
 	bash $(DOCKER_DIR)/verify-bill17.sh $(IMAGE_NAME):latest

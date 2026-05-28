@@ -138,7 +138,7 @@ fi
 # ----------------------------------------------------------------------
 echo "[entrypoint] starting uvicorn on $APP_HOST:$APP_PORT"
 cd /app
-python3 -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" &
+python3 -m uvicorn rag_service.main:app --host "$APP_HOST" --port "$APP_PORT" &
 UVICORN_PID=$!
 
 # Drop set -e so a non-zero uvicorn exit doesn't bypass the postgres cleanup

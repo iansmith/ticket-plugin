@@ -1,0 +1,13 @@
+# Development-time dependencies for the rag-service package.
+#
+# Per design/rag-service-testing.md: keep this list MINIMAL. The recommended
+# starter is just pytest + pytest-cov. Other packages (pytest-asyncio,
+# asgi-lifespan, respx, freezegun) are added only when a specific test
+# demands one, with justification in the test's docstring. Each adds
+# dependency surface and slows the dev loop.
+#
+# These do NOT get installed into the runtime image — only used for local
+# development and for any future CI test workflow.
+
+pytest>=8.0
+pytest-cov

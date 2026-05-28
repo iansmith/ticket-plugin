@@ -1,0 +1,46 @@
+# rag-service package metadata + pytest configuration (BILL-29).
+#
+# Minimal by design. Declares the package layout, the build backend, and
+# pytest's config. It does NOT carry the dependency list — runtime deps live
+# in requirements.txt and dev deps in requirements-dev.txt. The Dockerfile
+# installs via `pip3 install -r requirements.txt`; duplicating deps here
+# would create two sources of truth that can drift.
+#
+# Local development workflow (outside Docker):
+#
+#   cd rag-service
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements-dev.txt -r requirements.txt
+#   pip install -e .       # makes `import rag_service` work
+#   pytest
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "rag-service"
+version         = "0.1.0"
+# Pinned to the 3.12 series — matches python:3.12-slim-bookworm in the
+# Dockerfile. Reject 3.13 explicitly: our deps (torch+cpu, sentence-transformers)
+# are verified against 3.12 only, and we don't want pip silently resolving
+# different wheel sets for a developer's local 3.13 venv vs the container's
+# 3.12 runtime.
+requires-python = ">=3.12,<3.13"
+
+# Hatchling auto-discovers packages by the project name. Our project name is
+# `rag-service` (hyphenated, matches the directory) but the importable Python
+# package is `rag_service` (underscored, matches Python convention). Declare
+# the mapping explicitly.
+[tool.hatch.build.targets.wheel]
+packages = ["rag_service"]
+
+[tool.pytest.ini_options]
+testpaths        = ["tests"]
+python_files     = ["test_*.py"]
+python_classes   = ["Test*"]
+python_functions = ["test_*"]
+# --strict-markers: fail loudly if a test uses an undeclared @pytest.mark.X.
+#                   Keeps marker drift visible as a hard error.
+# -ra:              short summary of all non-pass outcomes at end of run.
+addopts          = ["-ra", "--strict-markers"]

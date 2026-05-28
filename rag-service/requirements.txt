@@ -1,7 +1,12 @@
-# ticket-rag service runtime dependencies (BILL-14).
+# ticket-rag service runtime dependencies.
 #
 # Pinned for reproducibility. Bumps land as deliberate edits, not pip drift.
 # All packages must support Python 3.12 on linux/arm64 and linux/amd64.
+#
+# Source-of-truth for runtime deps. Moved here from
+# docker/postgres-pgvector/requirements.txt in BILL-29 along with the rest of
+# the application code that's relocating to rag-service/. The Dockerfile's
+# COPY path updates correspondingly (see BILL-29 batch 7).
 #
 # BILL-21 — PyTorch CPU-only wheel index.
 #
@@ -22,6 +27,12 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 torch==2.8.0+cpu
+# numpy is a transitive dep of torch and sentence-transformers; pinned
+# explicitly here so the dependency is visible and so pip doesn't silently
+# shift major versions between rebuilds. Embedder.encode_query returns
+# np.ndarray and downstream code (db.knn_search, JSON serialization) is
+# implicitly tied to the numpy API.
+numpy==2.4.6
 sentence-transformers==3.3.1
 psycopg[binary]==3.2.3
 httpx==0.28.1

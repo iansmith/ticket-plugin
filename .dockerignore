@@ -1,0 +1,56 @@
+# Repo-root .dockerignore for the ticket-rag image build.
+#
+# Build context is the whole repo root (BILL-29 moved the FastAPI app from
+# docker/postgres-pgvector/app/ to rag-service/, and the Dockerfile now
+# COPYs from both subtrees). Everything below is excluded from the context
+# tarball that BuildKit ships to the daemon — keeps builds fast and
+# prevents accidental COPY of stray files.
+#
+# Only paths the Dockerfile actually COPYs need to remain reachable:
+#   - docker/postgres-pgvector/{init-trust-auth.sh,entrypoint.sh,
+#       models/,schema/}
+#   - rag-service/{requirements.txt,rag_service/}
+
+# VCS / editor / OS noise
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+.DS_Store
+
+# Repo docs / planning / per-ticket scratch — not needed in the image
+design
+docs
+*.md
+CHANGELOG.md
+LICENSE
+
+# Plugin manifests + skills (Claude Code plugin metadata, unrelated to the image)
+.claude
+.claude-plugin
+skills
+install-for-claude-desktop.sh
+
+# Build / cache artifacts
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+
+# Python test + tooling files — runtime image only needs rag_service/
+rag-service/tests
+rag-service/requirements-dev.txt
+rag-service/pyproject.toml
+rag-service/README.md
+
+# Don't ship the old in-place app dir or the old runtime requirements
+# even if they linger in someone's working tree.
+docker/postgres-pgvector/app
+docker/postgres-pgvector/requirements.txt
+
+# Local-only artifacts the verify scripts may produce
+docker/postgres-pgvector/*.log
