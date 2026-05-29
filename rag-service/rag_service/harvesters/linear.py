@@ -31,6 +31,13 @@ server's `X-RateLimit-Complexity-Remaining` header after every call. A
 throttled request is signalled by Linear as **HTTP 400 with GraphQL error code
 `RATELIMITED`** (not 429); the client detects that specifically and backs off.
 
+Credentials: the harvester authenticates with a **Linear personal API key**
+from the `LINEAR_API_KEY` env var — the direct GraphQL API, NOT the
+`linear-server` MCP the interactive ticket skills use (an MCP needs a live
+Claude session; a cron/headless harvester has none). A read-only key suffices.
+How to mint one and where it goes: `design/ticket-rag.md` § Harvester
+credentials (also echoed in the CLI's error message when the var is unset).
+
 READ-ONLY: this harvester only ever issues GraphQL *queries* against Linear.
 It never mutates LOU (or any) Linear workspace — see the ticket's "Out of
 scope".
@@ -459,8 +466,15 @@ def _build_real_client() -> LinearGraphQLClient:
     api_key = os.environ.get(LINEAR_API_KEY_ENV)
     if not api_key:
         raise SystemExit(
-            f"{LINEAR_API_KEY_ENV} is not set — export a Linear API key to run "
-            "the harvester."
+            f"{LINEAR_API_KEY_ENV} is not set.\n"
+            "The harvester uses Linear's direct GraphQL API (not the MCP), so it\n"
+            "needs a personal API key:\n"
+            "  1. Linear web app → Settings → Account → Security & access\n"
+            "     (or https://linear.app/settings/account/security)\n"
+            "  2. Personal API keys → Create key; scope = Read (read-only is enough)\n"
+            "  3. Copy the key (shown once) and export it where the harvester runs:\n"
+            f"       export {LINEAR_API_KEY_ENV}=\"lin_api_...\"\n"
+            "See design/ticket-rag.md § Harvester credentials for details."
         )
     return LinearGraphQLClient(api_key)
 

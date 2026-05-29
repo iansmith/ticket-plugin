@@ -184,6 +184,42 @@ Source: [Linear — Rate limiting](https://linear.app/developers/rate-limiting) 
 
 The binding constraint therefore **flips by operation** (request-count for cheap single fetches, complexity for batched sweeps), so the harvester models its budget in *points* with the `X-RateLimit-Complexity-Remaining` response header as ground truth — not as a single "N batches/hr" number. (The earlier "1,500 req/hr → 30 batches/hr" figure was wrong on both counts: the real request limit is 2,500/hr, and complexity — not request count — is the binding dimension for `sync_recent`.) The point estimates above are conservative; the live client reconciles against the server header after every call, so estimation error only ever makes it *more* cautious.
 
+### Harvester credentials (direct API — NOT the MCP)
+
+The harvesters authenticate with a **direct API token per source**, read from an environment variable. This is deliberately different from the interactive ticket skills (`/slopstop:start`, `:merge`, `:archive`, `:document`, `:doc-sync`), which reach Linear/JIRA through the **`linear-server` / Atlassian MCP** (OAuth, configured in the user's Claude client). A harvester runs **headless — manually or on cron, inside the container** — where no interactive MCP session exists, so the MCP path is not available to it. Harvesters therefore use the source's own REST/GraphQL API with a token. Each harvester reads its token from an env var and fails fast with a setup pointer if it is unset.
+
+| Source | Env var | API | Auth header |
+|---|---|---|---|
+| Linear  | `LINEAR_API_KEY`        | GraphQL `https://api.linear.app/graphql` | `Authorization: <key>` (raw personal API key, **no** `Bearer` prefix) |
+| JIRA    | `JIRA_API_TOKEN` (+ `JIRA_EMAIL`, `JIRA_BASE_URL`) | REST `https://<site>.atlassian.net/rest/api/3` | HTTP Basic: `Authorization: Basic base64(<email>:<token>)` |
+
+> The JIRA harvester is not built yet (Linear is BILL-37); its row is documented here so the credential story is complete and the GitHub/JIRA harvesters land against a known contract.
+
+#### Getting a Linear personal API key (read-only)
+
+1. In the Linear web app, open **Settings** (the gear, or `g` then `s`).
+2. Go to **Account → Security & access**.
+3. Scroll to the **Personal API keys** section and click **Create key** (also reachable directly at `https://linear.app/settings/account/security`).
+4. Give it a descriptive **name** (e.g. `slopstop-rag harvester`) and optionally an **expiration** date.
+5. For **scope/permissions**, choose **Read** only — the harvester never writes to Linear. (Linear offers Read / Write / Admin / Create issues / Create comments; the harvester needs only Read.)
+6. Click create, then **copy the key immediately** — Linear shows it once and it cannot be retrieved later.
+7. Export it where the harvester runs: `export LINEAR_API_KEY="lin_api_…"`.
+
+(Workspace admins can restrict member key creation under **Settings → Administration → API → Member API keys**; if Create key is greyed out, an admin must enable it or mint the key.)
+
+#### Getting a JIRA (Atlassian Cloud) API token (read-only)
+
+1. Sign in to your Atlassian account and open **Account settings → Security → API tokens**, or go directly to `https://id.atlassian.com/manage-profile/security/api-tokens`.
+2. Click **Create API token with scopes** (preferred — a least-privilege, scoped token). The plain **Create API token** also works but is unscoped (full account access); avoid it for a read-only harvester.
+3. Enter a **name** (e.g. `slopstop-rag harvester`) and an **expiration** (1–365 days).
+4. Select the app **Jira**.
+5. Select read scopes: **`read:jira-work`** (issues, comments, attachments, worklogs) and, if author display names are wanted, **`read:jira-user`**. No write scopes.
+6. Click **Create**, then **Copy to clipboard** — the token is shown once.
+7. Export the three values where the harvester runs:
+   `export JIRA_EMAIL="you@example.com"`, `export JIRA_API_TOKEN="…"`, `export JIRA_BASE_URL="https://<site>.atlassian.net"`.
+
+> Sources for the above flows (verified 2026-05-29): [Linear — Security & access](https://linear.app/docs/security-and-access), [Linear — API & webhooks](https://linear.app/docs/api-and-webhooks); [Atlassian — Manage API tokens](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/), [Jira scopes](https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/). Vendor UIs change; re-verify if the labels drift.
+
 "Slow walk overnight" is `sync_recent(since=long_ago)` with a configurable sleep between batches. Default 1 req/sec — comfortably inside every system's budget, and far below even the complexity-bound ceiling above.
 
 ### Tier-1 (deep coverage): worked tickets
