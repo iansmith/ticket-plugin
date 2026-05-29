@@ -13,7 +13,7 @@ The motivating query class is the kind that existing ticket-system filters canno
 - Semantic retrieval over ticket descriptions and comments across Linear (MAZ), JIRA (PLTF), and GitHub Issues (`owner/repo#N`).
 - Quality of retrieval is the dominant priority. Index size and indexing throughput are secondary.
 - Corpus scale: up to ~10K tickets per project. (Even with 10× growth this remains a small-corpus problem.)
-- Sit as an *optional* component of `ticket-plugin`: existing skills continue to work without it, gaining capability when it is running.
+- Sit as an *optional* component of `slopstop`: existing skills continue to work without it, gaining capability when it is running.
 - Self-contained — a single Docker container, started locally, listening only on `127.0.0.1`.
 
 ## Non-goals
@@ -29,7 +29,7 @@ The motivating query class is the kind that existing ticket-system filters canno
 ```
 ┌─────────────────────┐
 │  Claude Code        │
-│  (/ticket-search    │◄─── MCP ────┐
+│  (/slopstop:search    │◄─── MCP ────┐
 │   skill)            │             │
 └─────────────────────┘             │
                                     ▼
@@ -79,7 +79,7 @@ CREATE TABLE ticket_chunks (
 
     -- Identity & provenance
     source        TEXT NOT NULL,           -- 'linear' | 'jira' | 'github'
-    ticket_id     TEXT NOT NULL,           -- 'MAZ-43' | 'PLTF-12' | 'iansmith/ticket-plugin#7'
+    ticket_id     TEXT NOT NULL,           -- 'MAZ-43' | 'PLTF-12' | 'iansmith/slopstop#7'
     provenance    TEXT NOT NULL,           -- 'upstream' | 'local'
 
     -- Chunk identity within the ticket
@@ -344,7 +344,7 @@ Thin wrapper. User-facing endpoints map 1:1 to MCP tools:
 
 `POST /local/sync` is **not** exposed via MCP. It is called directly over HTTP by the ticket skills as part of their write flow; there is no user reason to invoke it through Claude.
 
-Returns plain JSON. The skills (`/ticket-search`, plus any future `/ticket-hotspots`) decide how to render results to the user.
+Returns plain JSON. The skills (`/slopstop:search`, plus any future `/slopstop:hotspots`) decide how to render results to the user.
 
 The MCP wrapper itself is stateless.
 
@@ -378,7 +378,7 @@ The MCP wrapper itself is stateless.
 docker run -d --name ticket-rag \
   -p 127.0.0.1:7777:7777 \
   -v ticket-rag-data:/var/lib/postgresql/data \
-  ticket-plugin/rag:latest
+  slopstop-rag:latest
 ```
 
 127.0.0.1 binding is non-negotiable. No port published to `0.0.0.0`.
@@ -387,9 +387,9 @@ docker run -d --name ticket-rag \
 
 The RAG is **optional**. Skills must work whether or not it is running.
 
-- `/ticket-search` probes `http://127.0.0.1:7777/healthz` first. On non-200, it prints *"RAG service not running; start with `docker start ticket-rag` or skip this query."* and stops.
+- `/slopstop:search` probes `http://127.0.0.1:7777/healthz` first. On non-200, it prints *"RAG service not running; start with `docker start ticket-rag` or skip this query."* and stops.
 - Ticket skills that push to `POST /local/sync` (`:document`, `:archive`, `:pause`, `:update`) treat a connection failure as a one-line warning, not a hard error. The skill's primary work completes; the local index stays slightly stale until the next push succeeds. Ticket skills never fail because the RAG is down.
-- Future skills that benefit from retrieval (e.g. a "find related tickets when starting work" hint inside `/ticket-start`) must include the same graceful-degradation pattern: optional capability, never required.
+- Future skills that benefit from retrieval (e.g. a "find related tickets when starting work" hint inside `/slopstop:start`) must include the same graceful-degradation pattern: optional capability, never required.
 
 ### `.project-conf.toml` integration
 
@@ -397,7 +397,7 @@ The plugin-wide configuration file is `.project-conf.toml` (TOML format), replac
 
 ```toml
 system = "github"
-key    = "iansmith/ticket-plugin"
+key    = "iansmith/slopstop"
 
 [status_labels]
 in_progress = "status:in-progress"
@@ -425,7 +425,7 @@ Mentioned only because someone will eventually want to upgrade.
 
 ## Open questions
 
-- **Cross-corpus default scope.** When called from a MAZ-prefixed cwd, does `/ticket-search` default to filtering on `source='linear'`, or search all corpora? Lean: project-scoped default, with an explicit override flag (`--all-sources`).
+- **Cross-corpus default scope.** When called from a MAZ-prefixed cwd, does `/slopstop:search` default to filtering on `source='linear'`, or search all corpora? Lean: project-scoped default, with an explicit override flag (`--all-sources`).
 - **Reaction signals from GitHub.** 👍 / 👎 / 🎉 / 😕 on comments could weight retrieval (a heavily-reacted comment is plausibly an "argument worth finding"). Defer until query patterns are clearer.
 - **Image and attachment content.** Ticket comments sometimes contain screenshots or pasted images. First cut: ignored. Worth revisiting if dropped content turns out to be material.
 - **Per-author retrieval.** *"Find arguments Ian made about caching."* Possible via `WHERE author = ?` filter; no special index needed. Will fall out naturally.
@@ -449,13 +449,13 @@ In approximate build order:
 
 1. **Container shell.** Postgres + pgvector + a "hello world" FastAPI + model files baked in. No real endpoints yet.
 2. **Schema + manual ingest.** `ticket_chunks` created on container init. A CLI tool to ingest a single ticket from a JSON file. Validates the embedding pipeline end-to-end.
-3. **First harvester: GitHub.** Cleanest API, and `iansmith/ticket-plugin` is the dogfood target.
+3. **First harvester: GitHub.** Cleanest API, and `iansmith/slopstop` is the dogfood target.
 4. **`/search` endpoint.** Dense retrieval first; reranker added immediately after.
-5. **MCP wrapper + `/ticket-search` skill.** End-to-end usable.
+5. **MCP wrapper + `/slopstop:search` skill.** End-to-end usable.
 6. **Local file watcher.** Indexes `findings.md` after the `:pause` / `:update` restructure lands. (The restructure is a hard prerequisite; without it, local-channel content is the wrong stuff.)
 7. **Linear harvester.**
 8. **JIRA harvester.**
-9. **`/hotspots` endpoint + `/ticket-hotspots` skill.**
+9. **`/hotspots` endpoint + `/slopstop:hotspots` skill.**
 
 A reasonable initial cut ships after step 5 — working RAG over one corpus, dogfoodable on this repo. Step 6 onward is incremental coverage.
 
@@ -464,6 +464,6 @@ A reasonable initial cut ships after step 5 — working RAG over one corpus, dog
 - **`.project-conf.toml` format** (plugin-wide rename): the legacy single-word `.project-prefix` is replaced by a structured TOML file at the same path. Touched by every `ticket-*` skill. **No auto-migration code** — the two existing legacy projects (mazzy/MAZ, lyos/PLTF) are migrated by hand; new code expects the new format only.
 - **`ticket-gh-init`** (new skill): bootstraps GitHub-backed projects. Prints an explainer of what it is about to change (labels in the GH repo, `.project-conf.toml` written locally), asks a single question (3-state vs. 4-state workflow — the 4-state version adds *in review*, meaning an external approval is required before transitioning to *done*), then performs the changes idempotently.
 - **`:pause` / `:update` restructure** (separate spec): redirects substantive prose to `findings.md` so the local channel indexes the right material.
-- **`ticket-doc-sync`** ([issue #1](https://github.com/iansmith/ticket-plugin/issues/1)): independent of the RAG, but adjacent — both projects need GitHub backing in place.
+- **`ticket-doc-sync`** ([issue #1](https://github.com/iansmith/slopstop/issues/1)): independent of the RAG, but adjacent — both projects need GitHub backing in place.
 
 None of these block the design; some block delivery of specific milestones.

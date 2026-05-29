@@ -34,7 +34,7 @@ def _chunk(id: int, text: str, score: float = 0.0) -> Chunk:
         source="github",
         provenance="upstream",
         kind="comment",
-        ticket_id="iansmith/ticket-plugin#17",
+        ticket_id="iansmith/slopstop#17",
     )
 
 
@@ -148,7 +148,7 @@ def test_search_passes_filters_to_db(client, fake_db):
             "source": ["github"],
             "provenance": ["upstream"],
             "kind": ["comment"],
-            "ticket_id": "iansmith/ticket-plugin#17",
+            "ticket_id": "iansmith/slopstop#17",
         },
         "rerank": False,
     }

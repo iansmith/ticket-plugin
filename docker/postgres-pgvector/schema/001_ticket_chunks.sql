@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS ticket_chunks (
 
     -- Identity & provenance
     source        TEXT NOT NULL,           -- 'linear' | 'jira' | 'github'
-    ticket_id     TEXT NOT NULL,           -- 'MAZ-43' | 'PLTF-12' | 'iansmith/ticket-plugin#7'
+    ticket_id     TEXT NOT NULL,           -- 'MAZ-43' | 'PLTF-12' | 'iansmith/slopstop#7'
     provenance    TEXT NOT NULL,           -- 'upstream' | 'local'
 
     -- Chunk identity within the ticket

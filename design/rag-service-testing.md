@@ -2,7 +2,7 @@
 
 **Status:** Draft, 2026-05-28. Authoritative for all Python+FastAPI work in `rag-service/`.
 
-This doc is the testing contract for the ticket-rag service ([BILL-28 umbrella](https://github.com/iansmith/ticket-plugin/issues/28)). Anyone adding code to `rag-service/` — human or AI — is expected to follow these patterns. Deviations need a written justification in the relevant ticket's `findings.md`, not silently in code.
+This doc is the testing contract for the ticket-rag service ([BILL-28 umbrella](https://github.com/iansmith/slopstop/issues/28)). Anyone adding code to `rag-service/` — human or AI — is expected to follow these patterns. Deviations need a written justification in the relevant ticket's `findings.md`, not silently in code.
 
 The goal: **every endpoint and every helper has unit tests that run in milliseconds on a developer's laptop, with no Docker, no postgres, no model load, no HTTP socket** — and the tests still exercise real production code paths, not mocks-of-themselves.
 
@@ -362,7 +362,7 @@ Runs the same suite where `torch`, `sentence-transformers`, the real models, and
 
 ```bash
 docker run --rm -v "$PWD/rag-service:/work" -w /work --entrypoint bash \
-  ticket-plugin/rag:latest -c "PYTHONPATH=/work python -m pytest tests/"
+  slopstop-rag:latest -c "PYTHONPATH=/work python -m pytest tests/"
 ```
 
 Use the host venv for the edit-run-edit loop; run the in-image pass before opening a PR (and the Docker-level `verify-bill17.sh` / `verify-bill18.sh` gates remain the integration source of truth).
@@ -395,7 +395,7 @@ Each deviation is a one-paragraph note in the relevant ticket's `findings.md` ex
 
 ## See also
 
-- [BILL-28](https://github.com/iansmith/ticket-plugin/issues/28) — application-layer umbrella; this doc is its testing contract.
+- [BILL-28](https://github.com/iansmith/slopstop/issues/28) — application-layer umbrella; this doc is its testing contract.
 - [`design/ticket-rag.md`](ticket-rag.md) — full architecture and endpoint contracts.
 - [`docker/postgres-pgvector/verify-bill17.sh`](../docker/postgres-pgvector/verify-bill17.sh), [`docker/postgres-pgvector/verify-bill18.sh`](../docker/postgres-pgvector/verify-bill18.sh) — the existing Docker-level end-to-end tests this layer complements.
 - FastAPI testing docs: [https://fastapi.tiangolo.com/tutorial/testing/](https://fastapi.tiangolo.com/tutorial/testing/)

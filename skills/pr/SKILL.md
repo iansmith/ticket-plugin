@@ -1,9 +1,9 @@
 ---
-description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /ticket-plugin:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
+description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /slopstop:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:pr
+# /slopstop:pr
 
 Open a pull request for the active ticket's branch with a pre-commit review pass and CodeRabbit feedback polling.
 
@@ -15,7 +15,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -39,7 +39,7 @@ The active ticket is parsed from `git branch --show-current` (see Pre-flight). I
 - `$DEFAULT_BRANCH` = `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` (cache for Step 4c).
 - `$BASE` = `--base` argument if given, else `$DEFAULT_BRANCH`.
 
-If an open PR already exists for `$BRANCH` (`gh pr list --head $BRANCH --state open` returns ≥1), refuse: `"PR already exists for $BRANCH: <url>. Use /ticket-plugin:merge to ship it, or push more commits to update."`
+If an open PR already exists for `$BRANCH` (`gh pr list --head $BRANCH --state open` returns ≥1), refuse: `"PR already exists for $BRANCH: <url>. Use /slopstop:merge to ship it, or push more commits to update."`
 
 ## Step 1 — Simplify pass on uncommitted changes
 
@@ -69,13 +69,13 @@ The goal: catch reuse/quality/efficiency issues before they land in a commit, si
 
 Skip if `--no-test` was passed.
 
-The PR shouldn't commit code that breaks tests. This step runs the project's test suite — at minimum the Phase 0 red tests written by `/ticket-plugin:plan` should be GREEN by now, since the work done since then was supposed to turn them green.
+The PR shouldn't commit code that breaks tests. This step runs the project's test suite — at minimum the Phase 0 red tests written by `/slopstop:plan` should be GREEN by now, since the work done since then was supposed to turn them green.
 
 ### 2a. Identify the test command
 
 In order, use the first hit:
 
-1. **`**Test command:**` line in `task_plan.md`** — written by `/ticket-plugin:plan` Phase 0, or by a previous `/ticket-plugin:pr` invocation that asked.
+1. **`**Test command:**` line in `task_plan.md`** — written by `/slopstop:plan` Phase 0, or by a previous `/slopstop:pr` invocation that asked.
 2. **Auto-detect** from project files in cwd:
    | Indicator | Command |
    |---|---|
@@ -101,7 +101,7 @@ Execute the test command. Capture output. Treat exit code 0 as success, anything
   ```
   Tests failed. Refusing to commit by default.
 
-    - "fix":        stop here. You fix the failing tests and re-run /ticket-plugin:pr.
+    - "fix":        stop here. You fix the failing tests and re-run /slopstop:pr.
     - "commit anyway":  proceed with the commit despite failing tests (you'll explain in the commit body why).
     - "abort":      stop entirely.
   ```
@@ -120,7 +120,7 @@ Generate the commit message:
   - The ticket title (first heading line of `task_plan.md`, stripped of the `# $TICKET — ` prefix).
   - The actual change set (`git diff --staged --stat` for file scope).
 - **Body** (blank line, then 1–3 short paragraphs): explain WHY. Pull from `task_plan.md`'s Plan section if it has relevant context; otherwise summarize the diff. Cite specific files where useful.
-- **Trailer** (blank line, then): `Refs: $TICKET`. (Use `Refs:` not `Closes:` — `/ticket-plugin:merge` is what actually closes the ticket; `Refs:` is the right linkage during the in-flight phase.)
+- **Trailer** (blank line, then): `Refs: $TICKET`. (Use `Refs:` not `Closes:` — `/slopstop:merge` is what actually closes the ticket; `Refs:` is the right linkage during the in-flight phase.)
 
 Commit:
 ```
@@ -258,7 +258,7 @@ for i in $(seq 1 15); do
 done
 ```
 
-**Timeout (15 iterations, no observable completion signal):** CodeRabbit hasn't posted inline comments, a finalized review, or a walkthrough with a completion marker after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck, the service is down, or the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take. Print `"CodeRabbit didn't post a completion signal in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /ticket-plugin:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
+**Timeout (15 iterations, no observable completion signal):** CodeRabbit hasn't posted inline comments, a finalized review, or a walkthrough with a completion marker after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck, the service is down, or the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take. Print `"CodeRabbit didn't post a completion signal in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /slopstop:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
 
 ## Step 7 — Verify, classify, and present CodeRabbit's proposals
 
@@ -381,7 +381,7 @@ PR: $PR_URL
 
 Continue to Step 8.
 
-**Stop after presenting.** This skill never auto-applies CodeRabbit suggestions. The user decides what to do next — apply fixes manually with their normal edit/commit flow, or re-run `/ticket-plugin:pr` after applying changes to get a fresh CodeRabbit pass.
+**Stop after presenting.** This skill never auto-applies CodeRabbit suggestions. The user decides what to do next — apply fixes manually with their normal edit/commit flow, or re-run `/slopstop:pr` after applying changes to get a fresh CodeRabbit pass.
 
 ## Step 8 — Confirm
 
@@ -401,7 +401,7 @@ CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 
 - **One confirmation per destructive remote action.** Step 1 may ask for confirmation if simplify made changes. Step 2 may pause if pre-commit hooks fail. Step 4 doesn't ask separately — pushing and creating the PR is the implicit confirmation that came from invoking this skill.
 - **Never** `git push --force`, `git reset --hard`, `git commit --no-verify`, or `gh pr merge --admin`. None of those have a place in this flow.
 - **Never auto-apply CodeRabbit suggestions in Step 6.** Present only. The user explicitly opts in.
-- **All commits made by this skill are anchored to the active ticket** via `Refs: $TICKET` in the trailer. If the active ticket doesn't match the work being committed, the user should switch tickets first (`/ticket-plugin:pause` → `/ticket-plugin:start <OTHER>`) before invoking this skill.
+- **All commits made by this skill are anchored to the active ticket** via `Refs: $TICKET` in the trailer. If the active ticket doesn't match the work being committed, the user should switch tickets first (`/slopstop:pause` → `/slopstop:start <OTHER>`) before invoking this skill.
 - **Simplify is a soft prerequisite.** If unavailable, the skill warns and asks the user to confirm continuing — not a hard stop.
 - **CodeRabbit is a soft prerequisite.** If the PR is created but CodeRabbit never responds within 15 minutes, that's not a failure — the skill prints a notice and stops without analysis. The PR is fine on its own.
 - **Failure handling per step:**

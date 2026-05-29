@@ -1,5 +1,5 @@
 system = "github"
-key    = "iansmith/ticket-plugin"
+key    = "iansmith/slopstop"
 prefix = "BILL"
 
 [status_labels]

@@ -5,7 +5,7 @@ slug:  Home
 
 # Design index
 
-This directory contains design documents for the ticket-plugin project. Together they describe two related systems:
+This directory contains design documents for the slopstop project. Together they describe two related systems:
 
 1. The `ticket-*` skill suite — Claude Code skills that manage work tickets on Linear, JIRA, or GitHub Issues.
 2. A standalone RAG service that indexes ticket content for semantic search and exposes it to Claude via MCP.
@@ -70,7 +70,7 @@ Choose your starting point based on what you're trying to do.
 
 ## What's tracked elsewhere
 
-- [iansmith/ticket-plugin#1](https://github.com/iansmith/ticket-plugin/issues/1) — original `ticket-doc-sync` spec. Superseded by [ticket-doc-sync.md](ticket-doc-sync.md); the issue stays open as the implementation tracking handle.
+- [iansmith/slopstop#1](https://github.com/iansmith/slopstop/issues/1) — original `ticket-doc-sync` spec. Superseded by [ticket-doc-sync.md](ticket-doc-sync.md); the issue stays open as the implementation tracking handle.
 
 ## Status
 

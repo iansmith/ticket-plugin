@@ -335,7 +335,7 @@ For Linear / JIRA projects, parent linkages will be picked up on the next `:star
 
 The RAG indexes by `ticket_id`. Multiple in-flight tickets simply mean more `provenance='local'` content scattered across nearby IDs. No schema or ingestion changes.
 
-`/ticket-search` does **not** filter by the selected ticket by default — semantic search should find context across nearby tickets, including ones the session isn't actively working. The selected ticket is incidental to search relevance.
+`/slopstop:search` does **not** filter by the selected ticket by default — semantic search should find context across nearby tickets, including ones the session isn't actively working. The selected ticket is incidental to search relevance.
 
 Parent / subtask relationships are not indexed by the RAG directly; they're consulted live by `:merge` / `:archive` / `:tickets`. The `ticket_refs JSONB` column in the RAG schema captures cross-ticket references found in chunk text incidentally, which may include parent / subtask IDs as a by-product.
 

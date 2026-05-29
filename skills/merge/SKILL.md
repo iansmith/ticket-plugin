@@ -1,13 +1,13 @@
 ---
-description: End-to-end "ship it" for the active ticket — code side only. Use /ticket-plugin:merge to merge the PR, advance the ticket by one state in its workflow on Linear/JIRA (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumps to Done so review/QA gates aren't skipped), and delete the merged branch. Does NOT archive local tracking or push the task plan back to the ticket — that's /ticket-plugin:archive, which the user runs separately once the ticket actually reaches a terminal Done-type state (typically after QA). The end-of-run summary classifies the post-transition state and tells the user whether to run :archive now or wait. Confirms once before any destructive remote operation; the confirmation prompt shows the specific computed next state so you know what you're agreeing to. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. Auto-detects ticket system.
+description: End-to-end "ship it" for the active ticket — code side only. Use /slopstop:merge to merge the PR, advance the ticket by one state in its workflow on Linear/JIRA (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumps to Done so review/QA gates aren't skipped), and delete the merged branch. Does NOT archive local tracking or push the task plan back to the ticket — that's /slopstop:archive, which the user runs separately once the ticket actually reaches a terminal Done-type state (typically after QA). The end-of-run summary classifies the post-transition state and tells the user whether to run :archive now or wait. Confirms once before any destructive remote operation; the confirmation prompt shows the specific computed next state so you know what you're agreeing to. Refuses safely on dirty trees, unpushed commits, draft PRs, or merge conflicts. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:merge
+# /slopstop:merge
 
-Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), and delete the corresponding branch if cleanly merged. The local tracking dir (`~/.claude/ticket-active/$TICKET/`) and the ticket description are NOT touched — those belong to `/ticket-plugin:archive`, which the user runs separately once the ticket has reached a terminal state.
+Merge the active ticket's PR, advance the ticket by one state on the ticket system (not auto-Done — the workflow's "next" state, which is typically a review/QA step before Done), and delete the corresponding branch if cleanly merged. The local tracking dir (`~/.claude/ticket-active/$TICKET/`) and the ticket description are NOT touched — those belong to `/slopstop:archive`, which the user runs separately once the ticket has reached a terminal state.
 
-End-to-end "ship it" path for the code side only. Irreversible. Confirms once before remote operations, and the confirmation shows the specific computed next state so the user knows what they're agreeing to. After completion, the summary classifies the post-transition state (terminal vs intermediate) and tells the user whether to run `/ticket-plugin:archive` now or wait for QA.
+End-to-end "ship it" path for the code side only. Irreversible. Confirms once before remote operations, and the confirmation shows the specific computed next state so the user knows what they're agreeing to. After completion, the summary classifies the post-transition state (terminal vs intermediate) and tells the user whether to run `/slopstop:archive` now or wait for QA.
 
 ## Project scope (every ticket skill follows this rule)
 
@@ -15,7 +15,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -127,7 +127,7 @@ The merge advances the ticket by **one** state in the workflow — not auto-Done
 Github has no introspectable workflow — the shape is declared in `.project-conf.toml`'s `[status_labels]`. No "preference logic" needed; the dispatch is hardcoded by workflow shape.
 
 - Parse `$OWNER` / `$REPO` from `key`, `$N` from `$TICKET`.
-- Read `$IN_PROGRESS_LABEL` and `$IN_REVIEW_LABEL` from `[status_labels].in_progress` and `[status_labels].in_review` via the snippet in `design/github-backend-primitives.md`. `$IN_PROGRESS_LABEL` is required (stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."` if missing). `$IN_REVIEW_LABEL` may be empty.
+- Read `$IN_PROGRESS_LABEL` and `$IN_REVIEW_LABEL` from `[status_labels].in_progress` and `[status_labels].in_review` via the snippet in `design/github-backend-primitives.md`. `$IN_PROGRESS_LABEL` is required (stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /slopstop:gh-init or add it manually."` if missing). `$IN_REVIEW_LABEL` may be empty.
 - Fetch current state:
   - MCP path: `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)` → read `state`, `labels`.
   - CLI path: `$GH issue view $N --json state,labels`.
@@ -154,7 +154,7 @@ Show the full plan and get explicit approval. This is the only confirmation prom
 > 2. **Advance** $TICKET on $SYSTEM by one state: `<current state name>` → `<computed next state name>`. (Or `"<current> — already terminal, no transition needed"` / `"<current> — no forward transition available on this workflow"` if applicable.) This is one step forward, NOT auto-Done. If the workflow's next state isn't what you expected, say `no` and handle it manually.
 > 3. **Switch to `$baseRefName`, pull the merge from origin, push it to any other remotes** (mirrors / forks / upstream — if `git remote` lists anything besides `origin`), then **delete the local branch** `$BRANCH` (`gh pr view` already confirmed `state: MERGED`).
 >
-> Local tracking (`~/.claude/ticket-active/$TICKET/`) and the ticket description are **NOT** touched by this command. After the merge, the summary will tell you whether to run `/ticket-plugin:archive` now (ticket landed in a terminal Done-type state) or to wait until QA/review completes (ticket landed in an intermediate state like `In Review`).
+> Local tracking (`~/.claude/ticket-active/$TICKET/`) and the ticket description are **NOT** touched by this command. After the merge, the summary will tell you whether to run `/slopstop:archive` now (ticket landed in a terminal Done-type state) or to wait until QA/review completes (ticket landed in an intermediate state like `In Review`).
 >
 > <soft-warning summary if any: BLOCKED / BEHIND / failing checks / no review approval>
 >
@@ -247,7 +247,7 @@ If the working tree on the new base is dirty after pull (shouldn't happen — St
 
 ## Step 7 — Confirm and recommend next step
 
-Print the summary, then a `Next step:` block recommending whether to run `/ticket-plugin:archive` now or wait. The recommendation is computed from the post-transition state — terminal vs intermediate.
+Print the summary, then a `Next step:` block recommending whether to run `/slopstop:archive` now or wait. The recommendation is computed from the post-transition state — terminal vs intermediate.
 
 ### Summary block
 
@@ -281,7 +281,7 @@ Then print exactly ONE of these blocks based on what happened:
 ```
 Next step:
   ✅ Ticket is now in '<new state>' — a terminal/Done state on this workflow.
-     Run /ticket-plugin:archive to push the final task plan as the description,
+     Run /slopstop:archive to push the final task plan as the description,
      post a DoD-confirmation comment + findings comment, and move
      ticket-active/$TICKET/ to ticket-archive/.
 ```
@@ -291,11 +291,11 @@ Next step:
 ```
 Next step:
   ⚠️ Ticket is now in '<new state>', which is NOT a terminal/Done state on this
-     workflow. Do NOT run /ticket-plugin:archive yet — the task plan would land
+     workflow. Do NOT run /slopstop:archive yet — the task plan would land
      on the ticket while QA/review is still in progress, and the local tracking
      dir would move out of ticket-active/ prematurely. Wait until the ticket
      reaches a Done-type state (typically after QA sign-off), then run
-     /ticket-plugin:archive.
+     /slopstop:archive.
 ```
 
 **C — Already terminal before the merge** ($NEXT_TRANSITION / $NEXT_STATE / $NEXT_GH_ACTION was `null` because current state was already terminal):
@@ -303,7 +303,7 @@ Next step:
 ```
 Next step:
   ✅ Ticket was already in '<state>' (terminal) before the merge.
-     Run /ticket-plugin:archive to push the final task plan + DoD-confirmation
+     Run /slopstop:archive to push the final task plan + DoD-confirmation
      comment + findings comment and move tracking to ticket-archive/.
 ```
 
@@ -312,7 +312,7 @@ Next step:
 ```
 Next step:
   ⏸ No forward transition was available on this workflow — the ticket remains
-     in '<state>'. Run /ticket-plugin:archive only when the ticket actually
+     in '<state>'. Run /slopstop:archive only when the ticket actually
      reaches a terminal Done-type state (transition manually first).
 ```
 
@@ -320,18 +320,18 @@ Next step:
 
 ```
 Next step:
-  ⏸ Ticket state was NOT advanced (merge-only path). Run /ticket-plugin:archive
+  ⏸ Ticket state was NOT advanced (merge-only path). Run /slopstop:archive
      only when the ticket reaches a terminal state (transition manually first).
 ```
 
-`progress.md` is intentionally NOT written to — the user can capture mid-flight notes via `/ticket-plugin:update` if they want.
+`progress.md` is intentionally NOT written to — the user can capture mid-flight notes via `/slopstop:update` if they want.
 
 ## Rules
 
 - Confirms ONCE in Step 3 before any destructive remote action. After that, run to completion or fail loudly.
 - **The ticket transition advances by ONE state in the workflow, not auto-Done.** Same-bucket transitions are preferred (e.g., "In Progress" → "In Review" over "In Progress" → "Done") so the team's review / QA gates aren't skipped. If the workflow has no intermediate state and the only forward option is Done, then Done is what happens — but that's because Done IS the next state, not because the skill assumed it. The proposed target is shown in Step 3's confirmation prompt; the user can say `no` if it isn't right.
-- **Does NOT touch local tracking or push the task plan to the ticket.** `~/.claude/ticket-active/$TICKET/` stays in place, and `task_plan.md` / `findings.md` are not pushed. `/ticket-plugin:archive` does all of that — and the user invokes it separately, once the ticket has actually reached a terminal state on the workflow (typically after QA). This separation exists because `:merge`'s "advance one state" frequently lands the ticket in an intermediate state like "In Review" that QA still needs to act on; pushing the task plan to the description and moving the local tracking dir out at that point would both be premature.
-- **Step 7 always tells the user whether to run `/ticket-plugin:archive` now or wait.** Terminal-state classification of the post-transition state: JIRA `statusCategory.key === "done"`, Linear `state.type === "completed"`. Terminal → ✅ recommend `:archive` now. Non-terminal → ⚠️ warn to wait until QA sign-off. No forward transition possible, or merge-only path → ⏸ neutral note ("when ready, transition manually first").
+- **Does NOT touch local tracking or push the task plan to the ticket.** `~/.claude/ticket-active/$TICKET/` stays in place, and `task_plan.md` / `findings.md` are not pushed. `/slopstop:archive` does all of that — and the user invokes it separately, once the ticket has actually reached a terminal state on the workflow (typically after QA). This separation exists because `:merge`'s "advance one state" frequently lands the ticket in an intermediate state like "In Review" that QA still needs to act on; pushing the task plan to the description and moving the local tracking dir out at that point would both be premature.
+- **Step 7 always tells the user whether to run `/slopstop:archive` now or wait.** Terminal-state classification of the post-transition state: JIRA `statusCategory.key === "done"`, Linear `state.type === "completed"`. Terminal → ✅ recommend `:archive` now. Non-terminal → ⚠️ warn to wait until QA sign-off. No forward transition possible, or merge-only path → ⏸ neutral note ("when ready, transition manually first").
 - All-or-nothing on the PR merge (Step 4). If it fails, no other state changes.
 - The ticket transition (Step 5) is best-effort after the merge — surface failures but don't roll back. The PR is already merged; we can't un-ship.
 - Branch deletion (Step 6) is the last destructive local action. Uses `gh pr view`'s authoritative `state: MERGED` rather than `git`'s commit-equivalence check, so squash and rebase merges work.

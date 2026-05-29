@@ -33,7 +33,7 @@ The skill prints a clear explainer **before** taking any action, then asks a sin
 ### 2. Explainer — printed before any action
 
 ```
-/ticket-gh-init prepares this GitHub repo for the ticket-* workflow.
+/slopstop:gh-init prepares this GitHub repo for the ticket-* workflow.
 
 It will:
   - Create state labels in <owner>/<repo> (if missing):
@@ -117,7 +117,7 @@ ticket-gh-init complete.
 Created labels: status:in-progress, status:in-review
 Wrote: .project-conf.toml (system=github, key=<owner>/<repo>)
 
-You can now run /ticket-start <ISSUE-NUMBER> to begin work.
+You can now run /slopstop:start <ISSUE-NUMBER> to begin work.
 ```
 
 If any labels were already present and any config was already correct, the confirm line for that item reads "already configured."
@@ -125,7 +125,7 @@ If any labels were already present and any config was already correct, the confi
 ## Arguments and flags
 
 ```
-/ticket-gh-init [--workflow {3,4}]
+/slopstop:gh-init [--workflow {3,4}]
                 [--in-progress-color HEX]
                 [--in-progress-label NAME]
                 [--in-review-color HEX]
@@ -140,7 +140,7 @@ All optional. Without any, the skill behaves as described above.
 
 ## Idempotency contract
 
-Re-running `/ticket-gh-init` on a fully-configured project must:
+Re-running `/slopstop:gh-init` on a fully-configured project must:
 
 1. Detect existing labels and skip creation.
 2. Detect existing `.project-conf.toml`, validate it, and confirm "already configured."

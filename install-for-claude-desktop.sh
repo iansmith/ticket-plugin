@@ -2,50 +2,50 @@
 #
 # install-for-claude-desktop.sh
 #
-# Installs ticket-plugin's commands into ~/.claude/commands/ for use in
+# Installs slopstop's commands into ~/.claude/commands/ for use in
 # Claude Desktop (which doesn't yet support /plugin install). They appear
-# as /ticket-start, /ticket-pause, /ticket-update, /ticket-archive (no
+# as /slopstop-start, /slopstop-pause, /slopstop-update, /slopstop-archive (no
 # plugin namespace — Claude Desktop loads them as standalone slash commands).
 #
 # For Claude Code (CLI) users, the proper install is:
 #
-#     /plugin marketplace add iansmith/ticket-plugin
-#     /plugin install ticket-plugin@ticket-plugin
+#     /plugin marketplace add iansmith/slopstop
+#     /plugin install slopstop@slopstop
 #
-# To pin to a specific version, set TICKET_PLUGIN_REF (defaults to master):
+# To pin to a specific version, set SLOPSTOP_REF (defaults to master):
 #
-#     TICKET_PLUGIN_REF=v1.0.0 bash install-for-claude-desktop.sh
+#     SLOPSTOP_REF=v1.0.0 bash install-for-claude-desktop.sh
 #
 
 set -euo pipefail
 
-REPO="iansmith/ticket-plugin"
-REF="${TICKET_PLUGIN_REF:-master}"
+REPO="iansmith/slopstop"
+REF="${SLOPSTOP_REF:-master}"
 DEST="$HOME/.claude/commands"
 SKILLS=(start plan pause update document archive pr merge doc-sync)
 
-echo "Installing ticket-plugin commands from $REPO@$REF..."
+echo "Installing slopstop commands from $REPO@$REF..."
 mkdir -p "$DEST"
 
 for skill in "${SKILLS[@]}"; do
   src="https://raw.githubusercontent.com/$REPO/$REF/skills/$skill/SKILL.md"
-  dst="$DEST/ticket-$skill.md"
-  echo "  /ticket-$skill"
+  dst="$DEST/slopstop-$skill.md"
+  echo "  /slopstop-$skill"
   curl -fsSL "$src" \
     | awk 'BEGIN { in_fm=0 }
            NR==1 && /^---$/ { in_fm=1; next }
            in_fm && /^---$/ { in_fm=0; next }
            in_fm { next }
            { print }' \
-    | sed -e 's|/ticket-plugin:start|/ticket-start|g' \
-          -e 's|/ticket-plugin:plan|/ticket-plan|g' \
-          -e 's|/ticket-plugin:pause|/ticket-pause|g' \
-          -e 's|/ticket-plugin:update|/ticket-update|g' \
-          -e 's|/ticket-plugin:document|/ticket-document|g' \
-          -e 's|/ticket-plugin:archive|/ticket-archive|g' \
-          -e 's|/ticket-plugin:pr|/ticket-pr|g' \
-          -e 's|/ticket-plugin:merge|/ticket-merge|g' \
-          -e 's|/ticket-plugin:doc-sync|/ticket-doc-sync|g' \
+    | sed -e 's|/slopstop:start|/slopstop-start|g' \
+          -e 's|/slopstop:plan|/slopstop-plan|g' \
+          -e 's|/slopstop:pause|/slopstop-pause|g' \
+          -e 's|/slopstop:update|/slopstop-update|g' \
+          -e 's|/slopstop:document|/slopstop-document|g' \
+          -e 's|/slopstop:archive|/slopstop-archive|g' \
+          -e 's|/slopstop:pr|/slopstop-pr|g' \
+          -e 's|/slopstop:merge|/slopstop-merge|g' \
+          -e 's|/slopstop:doc-sync|/slopstop-doc-sync|g' \
     > "$dst"
 done
 
@@ -53,22 +53,22 @@ cat <<EOF
 
 Installed 9 commands to $DEST:
 
-  /ticket-start <KEY>     start or resume work on a ticket
-  /ticket-plan [args]     investigate + write a parallelism-aware plan; optional agent fanout
-  /ticket-pause           pause the currently active ticket
-  /ticket-update          mid-session checkpoint to progress.md
-  /ticket-document        push current local docs (description + DoD-confirmation comment
+  /slopstop-start <KEY>     start or resume work on a ticket
+  /slopstop-plan [args]     investigate + write a parallelism-aware plan; optional agent fanout
+  /slopstop-pause           pause the currently active ticket
+  /slopstop-update          mid-session checkpoint to progress.md
+  /slopstop-document        push current local docs (description + DoD-confirmation comment
                           + findings) to the ticket. Idempotent; stops on divergence.
                           --force overrides; --dry-run previews
-  /ticket-archive         push final plan + DoD-confirmation comment + findings to a
+  /slopstop-archive         push final plan + DoD-confirmation comment + findings to a
                           ticket already moved to a Done-type state on Linear/JIRA, then
                           archive the local tracking dir (delegates the push to
-                          /ticket-document; stops cleanly if divergence is detected)
-  /ticket-pr              open a PR: simplify + commit + push + CodeRabbit poll
-  /ticket-merge           ship the code: merge PR + advance ticket one state. Does NOT
+                          /slopstop-document; stops cleanly if divergence is detected)
+  /slopstop-pr              open a PR: simplify + commit + push + CodeRabbit poll
+  /slopstop-merge           ship the code: merge PR + advance ticket one state. Does NOT
                           archive — the summary tells you whether to run
-                          /ticket-archive now (terminal state) or wait (intermediate)
-  /ticket-doc-sync        mirror design/ to the project's doc store (GH wiki / Linear
+                          /slopstop-archive now (terminal state) or wait (intermediate)
+  /slopstop-doc-sync        mirror design/ to the project's doc store (GH wiki / Linear
                           Docs). One-way push; orphan-pruning; reads .project-conf.toml
 
 Restart Claude Desktop if the commands don't appear in autocomplete.
@@ -81,5 +81,5 @@ This plugin requires either the Linear or Atlassian MCP installed.
 See https://github.com/$REPO#prerequisites for details.
 
 To uninstall later:
-  rm $DEST/ticket-{start,plan,pause,update,document,archive,pr,merge,doc-sync}.md
+  rm $DEST/slopstop-{start,plan,pause,update,document,archive,pr,merge,doc-sync}.md
 EOF

@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "ticket-plugin",
-  "displayName": "Ticket Plugin",
-  "version": "1.3.0",
-  "description": "Per-ticket tracking for Linear / JIRA tickets, with deep planning, PR creation, and ship-it commands. Eight slash commands — /ticket-plugin:start, :plan, :update, :pause, :archive, :pr, :merge, and :doc-sync — keep a durable per-ticket plan + findings + progress log outside the repo; investigate the codebase and produce a parallelism-aware plan with optional subagent fanout in git worktrees; open a PR with a pre-commit simplify pass, project tests, and CodeRabbit review polling; wrap merge-PR + advance-one-workflow-state (NOT auto-Done — review/QA gates are respected) + archive into one confirmed step; and mirror design/ to the repo wiki or Linear Docs via :doc-sync.",
+  "name": "slopstop",
+  "displayName": "Slopstop",
+  "version": "2.0.0",
+  "description": "Per-ticket tracking for Linear / JIRA tickets, with deep planning, PR creation, and ship-it commands. Eight slash commands — /slopstop:start, :plan, :update, :pause, :archive, :pr, :merge, and :doc-sync — keep a durable per-ticket plan + findings + progress log outside the repo; investigate the codebase and produce a parallelism-aware plan with optional subagent fanout in git worktrees; open a PR with a pre-commit simplify pass, project tests, and CodeRabbit review polling; wrap merge-PR + advance-one-workflow-state (NOT auto-Done — review/QA gates are respected) + archive into one confirmed step; and mirror design/ to the repo wiki or Linear Docs via :doc-sync.",
   "author": {
     "name": "Ian Smith"
   },
-  "homepage": "https://github.com/iansmith/ticket-plugin",
-  "repository": "https://github.com/iansmith/ticket-plugin",
+  "homepage": "https://github.com/iansmith/slopstop",
+  "repository": "https://github.com/iansmith/slopstop",
   "license": "MIT",
   "keywords": [
     "linear",

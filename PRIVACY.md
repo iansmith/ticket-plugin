@@ -4,7 +4,7 @@
 
 ## What the plugin is, technically
 
-`ticket-plugin` is a set of markdown skill files that instruct Claude Code's slash commands. The plugin author runs no servers, hosts no services, and has no infrastructure that could collect data about your usage even in principle. The full source is at [https://github.com/iansmith/ticket-plugin](https://github.com/iansmith/ticket-plugin) — you can read every line of it before you install.
+`slopstop` is a set of markdown skill files that instruct Claude Code's slash commands. The plugin author runs no servers, hosts no services, and has no infrastructure that could collect data about your usage even in principle. The full source is at [https://github.com/iansmith/slopstop](https://github.com/iansmith/slopstop) — you can read every line of it before you install.
 
 ## What stays on your machine
 
@@ -23,7 +23,7 @@ The plugin doesn't make API calls of its own — but the commands it ships *do* 
 
 1. **Claude Code → Anthropic.** Like any Claude Code conversation, when you invoke a slash command, the conversation contents (including the tracking-file text that gets loaded into context) are sent to Anthropic's Claude API for inference. Governed by [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy), not this plugin's.
 
-2. **Linear MCP / Atlassian MCP → Linear / Atlassian.** When you run `/ticket-plugin:start` or `/ticket-plugin:archive`, the skill calls into whichever ticket-system MCP you have installed. Those MCPs make API requests directly to Linear or Atlassian to fetch tickets, transition state, update descriptions, and post comments. Governed by Linear's and Atlassian's privacy policies, not this plugin's. The plugin author has no visibility into those calls.
+2. **Linear MCP / Atlassian MCP → Linear / Atlassian.** When you run `/slopstop:start` or `/slopstop:archive`, the skill calls into whichever ticket-system MCP you have installed. Those MCPs make API requests directly to Linear or Atlassian to fetch tickets, transition state, update descriptions, and post comments. Governed by Linear's and Atlassian's privacy policies, not this plugin's. The plugin author has no visibility into those calls.
 
 The only data this plugin ever pushes to your ticket system is the content you authored: your `task_plan.md` (as the ticket's new description) and your `findings.md` (as a comment). `progress.md` is intentionally never pushed.
 
@@ -37,4 +37,4 @@ If this policy ever changes — for example, if the plugin grows a feature that 
 
 ## Questions
 
-Open an issue at [https://github.com/iansmith/ticket-plugin/issues](https://github.com/iansmith/ticket-plugin/issues).
+Open an issue at [https://github.com/iansmith/slopstop/issues](https://github.com/iansmith/slopstop/issues).
