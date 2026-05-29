@@ -44,17 +44,19 @@ class FakeDB:
         fake_db.ping_returns = False         # simulate postgres unreachable
         fake_db.tables = {"ticket_chunks"}   # control has_table() responses
         fake_db.has_table_raises = RuntimeError(...)  # simulate caller misuse
+        fake_db.chunks = [Chunk(...), ...]   # seed knn_search results
 
-    Defaults model the happy path: ping() True, schema present.
+    Defaults model the happy path: ping() True, schema present, no chunks.
     """
 
     def __init__(self) -> None:
         self.ping_returns: bool = True
         self.tables: set[str] = {"ticket_chunks"}
         self.has_table_raises: BaseException | None = None
-        # Seed-able rows for future knn_search-style endpoints. Unused by
-        # /healthz; kept here so tests beyond Phase A don't have to reshape
-        # the fake.
+        # Seed knn_search results here. The default knn_search returns the
+        # first `k` of these verbatim (it does NOT re-rank by the query — the
+        # fake stands in for the real pgvector ordering, which the test
+        # controls by seeding chunks in the order it wants them returned).
         self.chunks: list = []
 
     def ping(self) -> bool:
@@ -64,6 +66,12 @@ class FakeDB:
         if self.has_table_raises is not None:
             raise self.has_table_raises
         return name in self.tables
+
+    def knn_search(self, vec, k, filters=None):
+        """Return the first `k` seeded chunks. Tests that need to assert on
+        the `filters` or `k` arguments override this method per-test with a
+        recording stand-in (see test_search.py)."""
+        return self.chunks[:k]
 
 
 class FakeEmbedder:

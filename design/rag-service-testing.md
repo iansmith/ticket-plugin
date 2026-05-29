@@ -330,6 +330,45 @@ Each of these adds dependency surface and slows the dev loop. Adding one should 
 
 ---
 
+## Running the tests
+
+There are two test-execution environments, by design. Both run the **same** `rag-service/tests/` suite; they differ only in which external deps are present.
+
+### 1. Host virtualenv — the fast inner loop (default)
+
+A local Python venv with the light deps only — `fastapi`, `pydantic`, `numpy`, `psycopg[binary]`, plus `pytest`/`pytest-cov`. It does **not** install `torch` / `sentence-transformers` and does **not** have the ~4.5 GB of model weights (those live only in the image, baked by BILL-15). The full suite runs sub-second here. The two live-model tests (`test_embed.py::test_encode_query_and_passage_*`, `test_rerank.py::test_score_returns_float_per_passage_*`) **auto-skip** via `@pytest.mark.skipif(not os.path.isdir(MODEL_PATH))` because the weights aren't on disk — that's expected and correct.
+
+This is the environment the whole DI-and-fakes design exists to enable: `FakeDB`/`FakeEmbedder`/`FakeReranker` stand in for postgres and the models, so the real production code paths run without either.
+
+Create it once:
+
+```bash
+cd rag-service
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+```
+
+Run:
+
+```bash
+cd rag-service && PYTHONPATH="$PWD" .venv/bin/python -m pytest tests/
+```
+
+> **Session-local note (BILL-29 / BILL-31):** during these tickets the working venv was created at `/tmp/bill29-venv` rather than `rag-service/.venv`, to keep it out of the repo tree entirely. That path is **ephemeral and machine-local** — never committed, never referenced by any committed file, and not guaranteed to exist in a fresh session or on another machine. Any agent or developer should recreate a venv as above (the `.venv/` form is `.gitignore`-covered) rather than assume `/tmp/bill29-venv` is present. The `**Test command:**` line a ticket's `task_plan.md` records is the authoritative invocation for that ticket; if it names a `/tmp` path, treat that as "a venv with the deps installed," not a literal requirement.
+
+### 2. Inside the image — the high-fidelity check
+
+Runs the same suite where `torch`, `sentence-transformers`, the real models, and `pgvector` all exist, so the live-model tests actually execute (~11 s total instead of sub-second):
+
+```bash
+docker run --rm -v "$PWD/rag-service:/work" -w /work --entrypoint bash \
+  ticket-plugin/rag:latest -c "PYTHONPATH=/work python -m pytest tests/"
+```
+
+Use the host venv for the edit-run-edit loop; run the in-image pass before opening a PR (and the Docker-level `verify-bill17.sh` / `verify-bill18.sh` gates remain the integration source of truth).
+
+---
+
 ## Anti-patterns — don't
 
 - **Don't `monkeypatch` module-level globals to swap dependencies.** Use `app.dependency_overrides`. The override mechanism is built for this; monkeypatch is a leaky workaround.

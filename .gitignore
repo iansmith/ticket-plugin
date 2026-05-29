@@ -9,6 +9,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
+# Local dev virtualenv for the host fast-test loop (see
+# design/rag-service-testing.md § Running the tests). Machine-local; never committed.
+.venv/
 
 # Runtime state for the postgres-pgvector container (BILL-12 / BILL-13).
 # Mounted into the container; populated by initdb on first start.

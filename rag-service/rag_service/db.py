@@ -28,8 +28,17 @@ See `design/rag-service-testing.md` for the canonical fixture pattern.
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING, Any
 
 import psycopg
+
+from rag_service.models import Chunk, SearchFilters
+
+if TYPE_CHECKING:
+    # Runtime annotations are strings (PEP 563 via the __future__ import),
+    # so numpy doesn't have to be importable at module-load time — keeps the
+    # heavy import off the pytest fast path.
+    import numpy as np
 
 # DSN overridable so that local dev outside Docker can point at any postgres.
 # Default matches the BILL-12/17 container config: trust auth on localhost,
@@ -57,6 +66,71 @@ PG_DSN: str = os.environ.get(
 # As more tunable constants accumulate, extract them into a `config.py`
 # module — for one knob it would be premature.
 STAGE1_TOP_K: int = 35
+
+
+# Columns surfaced by knn_search, in SELECT order. Kept as a module constant
+# so the SQL builder and the row→Chunk mapping can't drift apart.
+_CHUNK_COLUMNS = (
+    "id",
+    "text",
+    "source",
+    "provenance",
+    "kind",
+    "ticket_id",
+    "seq",
+    "author",
+)
+
+
+def _build_knn_sql(
+    vec_list: list[float],
+    k: int,
+    filters: SearchFilters | None,
+) -> tuple[str, list[Any]]:
+    """Build the parameterized kNN SQL + ordered bind values.
+
+    Pure function (no DB handle) so it's unit-testable at Layer 1 without a
+    live postgres. Every filter value is a bound parameter — NEVER
+    string-formatted into the SQL — so this is injection-safe by construction.
+
+    Cosine distance via the `<=>` operator matches the HNSW `vector_cosine_ops`
+    index from BILL-16's schema; `score = 1 - distance` so higher is more
+    similar. The ORDER BY uses the raw `embedding <=> %s::vector` expression
+    (NOT `ORDER BY score`) because the HNSW index is only consulted when the
+    planner sees that exact distance-against-a-constant shape — hence the
+    vector is bound twice (once for the score projection, once for ordering).
+
+    Bind order: [vec (score projection), <filter params in clause order>,
+    vec (ordering), k].
+    """
+    select_cols = ", ".join(_CHUNK_COLUMNS)
+    params: list[Any] = [vec_list]  # score projection vector
+
+    where_clauses: list[str] = []
+    f = filters or SearchFilters()
+    if f.source:
+        where_clauses.append("source = ANY(%s)")
+        params.append(f.source)
+    if f.provenance:
+        where_clauses.append("provenance = ANY(%s)")
+        params.append(f.provenance)
+    if f.kind:
+        where_clauses.append("kind = ANY(%s)")
+        params.append(f.kind)
+    if f.ticket_id:
+        where_clauses.append("ticket_id = %s")
+        params.append(f.ticket_id)
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sql = (
+        f"SELECT {select_cols}, 1 - (embedding <=> %s::vector) AS score "
+        f"FROM ticket_chunks{where_sql} "
+        f"ORDER BY embedding <=> %s::vector LIMIT %s"
+    )
+    params.append(vec_list)  # ordering vector
+    params.append(k)
+    return sql, params
 
 
 class DB:
@@ -114,6 +188,54 @@ class DB:
             )
             row = cur.fetchone()
         return bool(row and row[0])
+
+    def knn_search(
+        self,
+        vec: np.ndarray,
+        k: int,
+        filters: SearchFilters | None = None,
+    ) -> list[Chunk]:
+        """Stage-1 dense retrieval: top-`k` chunks by cosine similarity to `vec`.
+
+        `vec` is the query embedding from `Embedder.encode_query` (a 1024-dim
+        numpy array). It's converted to a plain Python list before binding —
+        psycopg has no native adapter for numpy arrays, and the `::vector` cast
+        in the SQL turns the bound list into a pgvector value.
+
+        `filters` narrows the candidate set (source / provenance / kind /
+        ticket_id); an unset filter dimension imposes no constraint. Results
+        come back ordered most-similar-first with `score = 1 - cosine_distance`.
+
+        RAISES if the connection is absent — like `has_table`, a missing
+        connection here is a caller-contract violation (search requires a live
+        DB), not a degradable condition. The /search endpoint reaches this only
+        through `Depends(get_db_conn)`, which yields a live connection in the
+        normal path.
+        """
+        if self._conn is None:
+            raise RuntimeError(
+                "knn_search called on a disconnected DB — postgres was "
+                "unreachable at request time"
+            )
+        sql, params = _build_knn_sql(vec.tolist(), k, filters)
+        with self._conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        # Row order matches _CHUNK_COLUMNS + trailing score.
+        return [
+            Chunk(
+                id=row[0],
+                text=row[1],
+                source=row[2],
+                provenance=row[3],
+                kind=row[4],
+                ticket_id=row[5],
+                seq=row[6],
+                author=row[7],
+                score=row[8],
+            )
+            for row in rows
+        ]
 
 
 def get_db_conn():

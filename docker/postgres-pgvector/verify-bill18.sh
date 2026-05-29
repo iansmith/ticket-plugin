@@ -127,48 +127,57 @@ layer_cache_ok() {
     #                        (already-fetched payload)
     # Either counts as cache-hit. A step that actually ran would emit
     # "#N DONE <non-zero>s" with output between the header and DONE.
+    #
+    # Why we key on the stage-1 SLOT index ("[stage-1 X/Y]"), not the "#N" id:
+    # BuildKit assigns a FRESH "#N" to a step's resolution probe AND to its
+    # actual execution/cache emission. The ADD of libgomp1.deb from
+    # snapshot.debian.org is the troublemaker — BuildKit intermittently
+    # re-validates the remote URL, emitting BOTH
+    #     "#10 [stage-1 4/13] ADD ... DONE 0.1s"   (resolution probe)
+    #     "#14 [stage-1 4/13] ADD ... CACHED"      (actual cached layer)
+    # Keying on "#N" would see #10 as a non-cache "DONE 0.1s" and falsely
+    # report a rebuild (this made the check ~50% flaky). The slot index X/Y is
+    # stable across both emissions, so we treat a slot as cached iff ANY of its
+    # "#N" emissions is a cache hit.
     python3 - /tmp/bill18-rebuild.log <<'PY'
 import re, sys
 log = open(sys.argv[1]).read()
 
-# Pass 1: collect stage-1 step IDs that appear before the application-code
-# COPY header. BuildKit may emit step headers out of numerical order due to
-# parallel layer resolution, so we collect IDs by encounter order and break
-# on the app COPY.
+# Map each BuildKit step id (#N) to its stage-1 slot index (the X in
+# "[stage-1 X/Y]"), and locate the application-code COPY slot.
 #
 # BILL-29: the final COPY is now
 #     COPY rag-service/rag_service/ /app/rag_service/
 # (was: COPY app/ /app/app/). Match on both source and dest so we don't
 # false-positive on the earlier `COPY rag-service/requirements.txt` step
 # which also starts with "COPY rag-service/".
-step_ids = []
-seen_app = False
+id_to_slot = {}
+app_slot = None
 for line in log.splitlines():
-    m = re.match(r'^#(\d+) \[stage-1\s+\d+/\d+\] (.*)$', line)
+    m = re.match(r'^#(\d+) \[stage-1\s+(\d+)/\d+\] (.*)$', line)
     if not m:
         continue
-    body = m.group(2)
+    sid, slot, body = m.group(1), int(m.group(2)), m.group(3)
+    id_to_slot[sid] = slot
     if 'COPY rag-service/rag_service/' in body and '/app/rag_service/' in body:
-        seen_app = True
-        break
-    step_ids.append(m.group(1))
-if not seen_app:
+        app_slot = slot
+if app_slot is None:
     sys.exit(2)  # didn't find the app COPY layer in the log
 
-# Pass 2: collect step IDs that hit cache by either marker.
-cached = set()
+# A slot is cached if ANY of its #N emissions is CACHED or DONE 0.0s.
+cached_slots = set()
 for line in log.splitlines():
     m = re.match(r'^#(\d+) CACHED', line)
-    if m:
-        cached.add(m.group(1))
-        continue
-    # "DONE 0.0s" is the FROM / ADD URL cache-hit marker. Allow up to 0.0s
-    # only — anything longer means real work was done.
-    m = re.match(r'^#(\d+) DONE 0\.0s', line)
-    if m:
-        cached.add(m.group(1))
+    if not m:
+        # "DONE 0.0s" is the FROM / ADD URL cache-hit marker. Allow 0.0s only —
+        # a non-zero DONE on a slot with no CACHED emission means real work.
+        m = re.match(r'^#(\d+) DONE 0\.0s', line)
+    if m and m.group(1) in id_to_slot:
+        cached_slots.add(id_to_slot[m.group(1)])
 
-missing = [s for s in step_ids if s not in cached]
+# Every stage-1 slot strictly before the app COPY slot must be cached.
+pre_app_slots = {s for s in id_to_slot.values() if s < app_slot}
+missing = sorted(pre_app_slots - cached_slots)
 sys.exit(0 if not missing else 1)
 PY
 }
