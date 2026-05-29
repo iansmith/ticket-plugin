@@ -468,11 +468,35 @@ def sync_recent(
 # ---------------------------------------------------------------------------
 
 
+def resolve_linear_api_key(config_path: str = HARVESTER_CONFIG_PATH) -> str | None:
+    """Resolve the Linear API key, env var first then the harvester config file.
+
+    Precedence: `LINEAR_API_KEY` in the environment wins (so a container/cron
+    run can `-e LINEAR_API_KEY=…` without a file); otherwise read `[linear]`
+    `api_key` from `.harvester.toml`. Returns None if neither is present.
+    """
+    env_key = os.environ.get(LINEAR_API_KEY_ENV)
+    if env_key:
+        return env_key
+
+    import tomllib
+
+    try:
+        with open(config_path, "rb") as f:
+            conf = tomllib.load(f)
+    except FileNotFoundError:
+        return None
+    api_key = (conf.get("linear") or {}).get("api_key")
+    return api_key or None
+
+
 def _build_real_client() -> LinearGraphQLClient:
-    api_key = os.environ.get(LINEAR_API_KEY_ENV)
+    api_key = resolve_linear_api_key()
     if not api_key:
         raise SystemExit(
-            f"{LINEAR_API_KEY_ENV} is not set.\n"
+            "No Linear API key found "
+            f"(neither ${LINEAR_API_KEY_ENV} nor [linear].api_key in "
+            f"{HARVESTER_CONFIG_PATH}).\n"
             "The harvester uses Linear's direct GraphQL API (not the MCP), so it\n"
             "needs a personal API key:\n"
             "  1. Open (the page is buried in Linear's UI; the URL is\n"
@@ -480,10 +504,11 @@ def _build_real_client() -> LinearGraphQLClient:
             "       https://linear.app/<workspace>/settings/account/security\n"
             "  2. Personal API keys → Create key; scope = Read ONLY (the harvester\n"
             "     never writes — do not grant Write/Admin/Create issues/comments)\n"
-            "  3. Copy the key (shown once) and put it where the harvester runs —\n"
-            "     a gitignored .harvester.env (copy from .harvester.env.example),\n"
-            f"     then `source` it: export {LINEAR_API_KEY_ENV}=\"lin_api_...\"\n"
-            "     (or set the var directly in the container/cron env).\n"
+            "  3. Copy the key (shown once) and put it where the harvester runs:\n"
+            f"     • a gitignored {HARVESTER_CONFIG_PATH} (copy from "
+            f"{HARVESTER_CONFIG_PATH}.example): [linear] api_key = \"lin_api_...\"\n"
+            f"     • or set ${LINEAR_API_KEY_ENV} in the container/cron env "
+            "(takes precedence).\n"
             "See design/ticket-rag.md § Harvester credentials for details."
         )
     return LinearGraphQLClient(api_key)
