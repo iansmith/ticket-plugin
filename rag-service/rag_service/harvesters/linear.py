@@ -316,15 +316,22 @@ class LinearGraphQLClient:
     def _post(self, query: str, variables: dict, *, est_cost: float) -> dict:
         """Issue one GraphQL request under both budgets; return `data`.
 
-        `est_cost` is the caller's complexity estimate, pre-reserved against the
-        point budget before the request goes out. On a `RATELIMITED` response we
+        `est_cost` is the caller's complexity estimate, reserved against the
+        point budget ONCE per logical request. On a `RATELIMITED` response we
         back off (exponential) and retry up to `max_retries`; any other GraphQL
-        error raises immediately.
+        error raises immediately. The complexity reservation is NOT repeated on
+        retries — a throttled attempt incurred no server-side query cost, so
+        re-charging the local budget each retry would over-throttle (up to
+        `max_retries+1`× the real cost). The request-count `RateLimiter`, by
+        contrast, IS acquired each attempt — every retry is a real HTTP call.
         """
         attempt = 0
+        reserved = False
         while True:
             self._rate_limiter.acquire()
-            self._complexity.reserve(est_cost)
+            if not reserved:
+                self._complexity.reserve(est_cost)
+                reserved = True
             resp = self._http.post(
                 self._endpoint, json={"query": query, "variables": variables}
             )
@@ -433,8 +440,9 @@ def sync_recent(
     """Batch catch-up: re-index every ticket updated at/after `since`.
 
     Returns the total number of chunk rows written across all tickets. The
-    client owns pagination + rate limiting (≤50 tickets/request, ≤30
-    batches/hr); this orchestration just ingests each returned ticket.
+    client owns pagination + rate limiting (≤LINEAR_BATCH_SIZE tickets/request,
+    under the complexity-point budget — see the module docstring); this
+    orchestration just ingests each returned ticket.
     """
     total = 0
     for ticket in client.fetch_recent(since):

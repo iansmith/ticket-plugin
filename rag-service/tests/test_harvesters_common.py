@@ -263,6 +263,64 @@ def test_oversized_description_has_overlap_between_chunks():
     assert all(shared)
 
 
+# ---------------------------------------------------------------------------
+# write_ticket — resync-scope identity guard
+#
+# write_ticket's DB body needs pgvector (covered by the Docker gate), but the
+# pre-INSERT validation loop is pure Python and worth a Layer-1 test. We only
+# need a connection whose .transaction()/.cursor() never get reached — the
+# guard raises before the transaction opens — so a bare object suffices.
+# ---------------------------------------------------------------------------
+
+
+def _embedded_row(**overrides) -> ChunkRow:
+    row = ChunkRow(
+        source="linear",
+        ticket_id="LOU-102",
+        provenance="upstream",
+        kind="description",
+        seq=0,
+        text="x",
+        code_refs=[],
+        ticket_refs=[],
+    )
+    row.embedding = [0.0] * 1024
+    for k, v in overrides.items():
+        setattr(row, k, v)
+    return row
+
+
+class _ExplodingConn:
+    """A connection that fails loudly if write_ticket ever touches the DB —
+    proving the guard rejects a bad batch *before* opening a transaction."""
+
+    def transaction(self):
+        raise AssertionError("write_ticket opened a transaction despite a bad row")
+
+    def cursor(self):
+        raise AssertionError("write_ticket used a cursor despite a bad row")
+
+
+def test_write_ticket_rejects_row_outside_resync_scope():
+    # A row whose ticket_id differs from the function's resync scope must be
+    # rejected before any DB work — else the DELETE (scoped by the args) would
+    # clear one ticket while the INSERT writes another, leaving stale rows.
+    rows = [_embedded_row(ticket_id="LOU-999")]
+    with pytest.raises(ValueError, match="outside the resync"):
+        write_ticket(
+            _ExplodingConn(), rows, source="linear", ticket_id="LOU-102"
+        )
+
+
+def test_write_ticket_rejects_unembedded_row_first():
+    row = _embedded_row()
+    row.embedding = None
+    with pytest.raises(ValueError, match="un-embedded"):
+        write_ticket(
+            _ExplodingConn(), [row], source="linear", ticket_id="LOU-102"
+        )
+
+
 def test_oversized_description_never_splits_a_code_fence():
     # A fenced block embedded in a huge description must survive intact in
     # exactly one chunk — extracted as a code_ref, never cut in half.

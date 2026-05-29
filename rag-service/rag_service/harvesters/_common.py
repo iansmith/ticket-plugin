@@ -576,6 +576,19 @@ def write_ticket(
                 f"write_ticket got an un-embedded row (seq={row.seq}); "
                 "call embed_rows() before write_ticket()"
             )
+        if (
+            row.source != source
+            or row.ticket_id != ticket_id
+            or row.provenance != provenance
+        ):
+            raise ValueError(
+                "write_ticket got a row whose identity is outside the resync "
+                f"scope: expected ({source}, {ticket_id}, {provenance}) but got "
+                f"({row.source}, {row.ticket_id}, {row.provenance}). The DELETE "
+                "is scoped by the function args, so a row from a different scope "
+                "would be inserted without its own scope being cleared first — "
+                "leaving stale rows behind."
+            )
 
     cols = ", ".join(_INSERT_COLUMNS)
     placeholders = ", ".join(
@@ -594,9 +607,12 @@ def write_ticket(
                 cur.execute(
                     insert_sql,
                     (
-                        row.source,
-                        row.ticket_id,
-                        row.provenance,
+                        # Bind the resync-scope args (not row.* identity) so an
+                        # inserted row can never fall outside the DELETE scope;
+                        # the guard above already proved they're equal.
+                        source,
+                        ticket_id,
+                        provenance,
                         row.kind,
                         row.seq,
                         row.upstream_id,
