@@ -195,15 +195,26 @@ The harvesters authenticate with a **direct API token per source**, read from an
 
 > The JIRA harvester is not built yet (Linear is BILL-37); its row is documented here so the credential story is complete and the GitHub/JIRA harvesters land against a known contract.
 
+**Where the key lives.** The token is a **secret**, so it never goes in a committed file — and `.project-conf.toml` *is* committed, so the key does **not** belong there. The code reads it only from the **environment**. For local/dev convenience, put the `export …` lines in a **`.harvester.env`** file at the repo root and `source` it before running:
+
+```bash
+cp .harvester.env.example .harvester.env   # template is committed; .harvester.env is gitignored
+# edit .harvester.env, paste your read-only token(s)
+source .harvester.env
+python -m rag_service.harvesters.linear sync-ticket LOU-102
+```
+
+`.harvester.env` is **gitignored** (alongside the committed `.harvester.env.example` that documents the format). The harvester does not parse the file itself — it only reads the environment — so in the container or a cron job you can equally well set the vars directly (e.g. `docker run -e LINEAR_API_KEY=…`, or an `EnvironmentFile=` in a systemd unit) and skip the file.
+
 #### Getting a Linear personal API key (read-only)
 
 1. Open the account settings directly — the page is **buried in Linear's UI**, so use the URL. The path is **workspace-scoped**: `https://linear.app/<workspace>/settings/account/<page>`. For the Mazarin workspace, the profile page (a reliable, always-present landing spot) is `https://linear.app/mazarin/settings/account/profile`; swap `mazarin` for your own workspace slug. (Via the UI it's the avatar/gear → **Settings → Account**, but the direct URL is much faster to reach.)
 2. From there go to the **Security & access** page — same workspace-scoped pattern: `https://linear.app/<workspace>/settings/account/security` (e.g. `https://linear.app/mazarin/settings/account/security`).
 3. Scroll to the **Personal API keys** section and click **Create key**.
 4. Give it a descriptive **name** (e.g. `slopstop-rag harvester`) and optionally an **expiration** date.
-5. For **scope/permissions**, choose **Read** only — the harvester never writes to Linear. (Linear offers Read / Write / Admin / Create issues / Create comments; the harvester needs only Read.)
+5. For **scope/permissions**, grant **Read** and **nothing else**. The harvester issues only GraphQL *queries* (`fetch_ticket` / `fetch_recent`) — it never mutates Linear — so the write-capable scopes are unnecessary and over-privileged. Linear offers Read / Write / Admin / **Create issues** / **Create comments**; leave Write, Admin, **Create issues, and Create comments OFF**. Read alone is sufficient and is the correct least-privilege choice.
 6. Click create, then **copy the key immediately** — Linear shows it once and it cannot be retrieved later.
-7. Export it where the harvester runs: `export LINEAR_API_KEY="lin_api_…"`.
+7. Store it where the harvester runs — put `export LINEAR_API_KEY="lin_api_…"` in a **`.harvester.env`** file (gitignored; copy from `.harvester.env.example`) and `source` it, or set the var directly in the container/cron env. See *Where the key lives* above.
 
 (Workspace admins can restrict member key creation under **Settings → Administration → API → Member API keys**; if Create key is greyed out, an admin must enable it or mint the key.)
 
@@ -213,9 +224,9 @@ The harvesters authenticate with a **direct API token per source**, read from an
 2. Click **Create API token with scopes** (preferred — a least-privilege, scoped token). The plain **Create API token** also works but is unscoped (full account access); avoid it for a read-only harvester.
 3. Enter a **name** (e.g. `slopstop-rag harvester`) and an **expiration** (1–365 days).
 4. Select the app **Jira**.
-5. Select read scopes: **`read:jira-work`** (issues, comments, attachments, worklogs) and, if author display names are wanted, **`read:jira-user`**. No write scopes.
+5. Select **read scopes only**: **`read:jira-work`** (issues, comments, attachments, worklogs) and, if author display names are wanted, **`read:jira-user`**. Select **no** `write:` / `manage:` scopes — the harvester only reads.
 6. Click **Create**, then **Copy to clipboard** — the token is shown once.
-7. Export the three values where the harvester runs:
+7. Store the three values where the harvester runs — in the gitignored **`.harvester.env`** (copy from `.harvester.env.example`) or directly in the container/cron env:
    `export JIRA_EMAIL="you@example.com"`, `export JIRA_API_TOKEN="…"`, `export JIRA_BASE_URL="https://<site>.atlassian.net"`.
 
 > Sources for the above flows (verified 2026-05-29): [Linear — Security & access](https://linear.app/docs/security-and-access), [Linear — API & webhooks](https://linear.app/docs/api-and-webhooks); [Atlassian — Manage API tokens](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/), [Jira scopes](https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/). Vendor UIs change; re-verify if the labels drift.
