@@ -1,4 +1,4 @@
-# ticket-plugin build entries (BILL-18).
+# slopstop build entries (BILL-18).
 #
 # User-facing make targets that wrap the docker workflow for the ticket-rag
 # service container. Documented in docker/postgres-pgvector/README.md.
@@ -6,7 +6,7 @@
 # Targets:
 #   rag-build       — build the image with both :<git-sha> and :latest tags
 #   rag-run         — build (if needed) and run the BILL-17 end-to-end smoke test
-#   rag-clean       — remove the ticket-plugin/rag images and any leftover
+#   rag-clean       — remove the slopstop/rag images and any leftover
 #                     smoke-test container
 #   rag-clean-deep  — rag-clean plus a full BuildKit cache prune. Use when
 #                     Docker Desktop VM disk pressure accumulates from
@@ -15,7 +15,7 @@
 # Run from the repo root.
 
 DOCKER_DIR := docker/postgres-pgvector
-IMAGE_NAME := ticket-plugin/rag
+IMAGE_NAME := slopstop/rag
 GIT_SHA    := $(shell git rev-parse --short HEAD)
 
 .PHONY: rag-build rag-run rag-clean rag-clean-deep

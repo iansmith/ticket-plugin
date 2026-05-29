@@ -1,9 +1,9 @@
 ---
-description: Replace the active ticket's empty Plan section with a thorough, parallelism-aware plan grounded in real codebase investigation, starting with a Phase 0 that writes RED tests for the expected behavior. Also drafts a client-readable Definition of Done (plain-language observable outcomes) that ends up at the top of the ticket description on archive. Use /ticket-plugin:plan [constraint] — the optional textual constraint scopes BOTH the investigation and the resulting plan literally. Phase 0's red tests anchor each work item's "Done when" criteria. The skill confirms before destructive actions (commit before fanout, agent launch, auto-merge); auto-stops hard-stuck agents (60+ min no commits AND repeating errors); never auto-merges without your explicit yes.
+description: Replace the active ticket's empty Plan section with a thorough, parallelism-aware plan grounded in real codebase investigation, starting with a Phase 0 that writes RED tests for the expected behavior. Also drafts a client-readable Definition of Done (plain-language observable outcomes) that ends up at the top of the ticket description on archive. Use /slopstop:plan [constraint] — the optional textual constraint scopes BOTH the investigation and the resulting plan literally. Phase 0's red tests anchor each work item's "Done when" criteria. The skill confirms before destructive actions (commit before fanout, agent launch, auto-merge); auto-stops hard-stuck agents (60+ min no commits AND repeating errors); never auto-merges without your explicit yes.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:plan
+# /slopstop:plan
 
 Replace `task_plan.md`'s empty `## Plan` section with a thorough plan grounded in actual codebase investigation. Phase 0 writes red tests for the expected behavior FIRST, so the plan's "Done when" criteria are objective (a named test turning green) rather than prose-assertion. When the plan has parallel-safe work items, optionally fan them out across subagents in git worktrees and orchestrate them.
 
@@ -15,7 +15,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -30,7 +30,7 @@ The constraint is **literal** — out-of-scope work is excluded from the plan ev
 
 If `$ARGUMENTS` is empty, the plan covers everything implied by the ticket's description.
 
-The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to plan. Run /ticket-plugin:start first."` and stop.
+The active ticket is parsed from `git branch --show-current` (see Pre-flight). If empty: `"No active $PREFIX ticket to plan. Run /slopstop:start first."` and stop.
 
 ## Pre-flight (run in parallel)
 
@@ -132,7 +132,7 @@ Run the test command from 0a. One of three outcomes:
 
   <captured error output>
 
-  Fix the test harness, or revise the tests, and re-run /ticket-plugin:plan.
+  Fix the test harness, or revise the tests, and re-run /slopstop:plan.
   ```
 
 ### 0e. Commit the red tests
@@ -154,7 +154,7 @@ Goal: understand the codebase as it relates to the ticket's outcome, scoped by `
 
 ### 1a. Read existing context
 
-- `task_plan.md`'s `## Original description (snapshot at start)` section — that's the ticket scope as captured by `/ticket-plugin:start`.
+- `task_plan.md`'s `## Original description (snapshot at start)` section — that's the ticket scope as captured by `/slopstop:start`.
 - `findings.md` — any prior investigation. Read but don't duplicate it.
 - (Optional) Re-fetch the ticket fresh from Linear/JIRA for the current description, in case it was edited since start. Skip if the original description is recent enough.
 
@@ -302,7 +302,7 @@ Look at the parallelism analysis from Step 2:
   ```
   Serial execution — no agents needed.
   Plan written to ~/.claude/ticket-active/$TICKET/task_plan.md.
-  Run /ticket-plugin:update as you go to checkpoint progress; /ticket-plugin:pr when ready.
+  Run /slopstop:update as you go to checkpoint progress; /slopstop:pr when ready.
   ```
   Stop.
 
@@ -374,7 +374,7 @@ You are agent <agent-id> working on ticket $TICKET ($TICKET_TITLE).
 2. You forked from $BRANCH at SHA $BASE_SHA. Do not merge other branches into your worktree, do not rebase, and do not push to origin.
 3. Commit frequently to <agent branch> as you complete sub-steps. Aim for 3–10 commits across your work. Small commits make it easier to recover from off-track work.
 4. Each commit message starts with `[$TICKET]`. End with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-5. Do not open PRs. Do not run /ticket-plugin commands. The orchestrator handles integration after all agents finish.
+5. Do not open PRs. Do not run /slopstop commands. The orchestrator handles integration after all agents finish.
 6. If you finish your slice early, do NOT take on additional work. Report completion and stop.
 7. If you get stuck and cannot make progress, commit what you have, report what blocked you, and stop. Do not loop on a dead end.
 
@@ -604,7 +604,7 @@ Investigation: appended to findings.md
 Agents:        <K launched, M completed, X auto-stopped, Y errored>
 Integration:   <"auto-merged <J> branches, HEAD now at <sha>" | "manual integration left to you" | "no agents launched">
 
-Next: /ticket-plugin:pr to open a PR for review.
+Next: /slopstop:pr to open a PR for review.
 ```
 
 ## Rules

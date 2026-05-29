@@ -39,7 +39,7 @@ key    = "PLTF"
 ### GitHub
 ```toml
 system = "github"
-key    = "iansmith/ticket-plugin"
+key    = "iansmith/slopstop"
 prefix = "BILL"                     # short identifier used in branch names + filesystem paths
 
 [status_labels]

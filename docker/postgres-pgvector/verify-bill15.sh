@@ -5,15 +5,15 @@
 #   bash docker/postgres-pgvector/verify-bill15.sh [IMAGE_TAG]
 #
 # Default IMAGE_TAG is the pre-BILL-15 baseline so the script starts RED:
-#   ticket-plugin/postgres-pgvector:bill21-after
+#   slopstop/postgres-pgvector:bill21-after
 #
 # After building the BILL-15 image, pass the new tag:
-#   bash docker/postgres-pgvector/verify-bill15.sh ticket-plugin/postgres-pgvector:bill15
+#   bash docker/postgres-pgvector/verify-bill15.sh slopstop/postgres-pgvector:bill15
 #
 # Each check uses --entrypoint /bin/sh (or --entrypoint python3) to skip
 # postgres startup — all five checks complete in seconds.
 
-IMAGE="${1:-ticket-plugin/postgres-pgvector:bill21-after}"
+IMAGE="${1:-slopstop/postgres-pgvector:bill21-after}"
 PASS=0
 FAIL=0
 

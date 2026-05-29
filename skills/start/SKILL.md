@@ -1,9 +1,9 @@
 ---
-description: Start or resume work on a Linear or JIRA ticket. Use /ticket-plugin:start <KEY> (e.g. /ticket-plugin:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, asks for a Conventional-Commits-style branch type and creates a feature branch like fix/MAZ-26 or feat/MAZ-26 — with a heuristic suggestion from labels/title and the choice between branching off the default branch vs the current branch when cwd is on a feature branch, plus a "skip" option to opt out of branch creation entirely — then seeds tracking files), or resumes an existing one. Auto-detects ticket system.
+description: Start or resume work on a Linear or JIRA ticket. Use /slopstop:start <KEY> (e.g. /slopstop:start MAZ-26). Fresh-starts a new ticket (fetches it, transitions to In Progress, asks for a Conventional-Commits-style branch type and creates a feature branch like fix/MAZ-26 or feat/MAZ-26 — with a heuristic suggestion from labels/title and the choice between branching off the default branch vs the current branch when cwd is on a feature branch, plus a "skip" option to opt out of branch creation entirely — then seeds tracking files), or resumes an existing one. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:start
+# /slopstop:start
 
 Start or resume work on a ticket.
 
@@ -19,7 +19,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -35,7 +35,7 @@ If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in 
 ## Pre-flight
 
 1. Validate `$ARGUMENTS` matches `^[A-Z]+-\d+$`. If not, ask for a valid ticket key and stop.
-2. If the current branch encodes a *different* `$PREFIX-N` ticket from `$ARGUMENTS`, that's a context switch: suggest the user run `/ticket-plugin:pause` (or `/ticket-plugin:update`) on the current branch first to capture state, then invoke `:start $ARGUMENTS` again. (The switch itself happens via git checkout in the steps below; this skill does not auto-bridge a context switch.) On the same branch, or on a non-ticket branch, continue.
+2. If the current branch encodes a *different* `$PREFIX-N` ticket from `$ARGUMENTS`, that's a context switch: suggest the user run `/slopstop:pause` (or `/slopstop:update`) on the current branch first to capture state, then invoke `:start $ARGUMENTS` again. (The switch itself happens via git checkout in the steps below; this skill does not auto-bridge a context switch.) On the same branch, or on a non-ticket branch, continue.
 
 Then fall through to Resume mode (if `~/.claude/ticket-active/$ARGUMENTS/` exists with content) or Fresh-start mode (if it doesn't).
 
@@ -93,7 +93,7 @@ See `design/github-backend-primitives.md` for the full primitives + rationale.
 - Read `state.type` ∈ `{"backlog", "unstarted", "started", "completed", "canceled"}` (the `type` field on the workflow state, not the state name).
 
 **GitHub:**
-- Parse `$OWNER` and `$REPO` from `.project-conf.toml`'s `key` field (e.g. `iansmith/ticket-plugin` → `$OWNER=iansmith`, `$REPO=ticket-plugin`). Parse `$N` from `$ARGUMENTS` (digits after the `<PREFIX>-`, e.g. `BILL-8` → `$N=8`).
+- Parse `$OWNER` and `$REPO` from `.project-conf.toml`'s `key` field (e.g. `iansmith/slopstop` → `$OWNER=iansmith`, `$REPO=slopstop`). Parse `$N` from `$ARGUMENTS` (digits after the `<PREFIX>-`, e.g. `BILL-8` → `$N=8`).
 - **MCP path** (`$GH_BACKEND = "MCP"`): call `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)`. Returns `{number, title, state, body, labels, assignees, milestone, url, ...}`.
 - **CLI path** (`$GH_BACKEND = "CLI"`): `$GH issue view $N --json number,title,state,body,labels,assignees,milestone,url`. Same fields.
 - Read `state` ∈ `{"OPEN", "CLOSED"}` (binary; no nuance). Read `labels` (array of `{name, color, description}`).
@@ -215,7 +215,7 @@ Skip entirely if `$NEW_BRANCH == null` (user picked `skip` in Step 4b). Set `$BR
 - `git switch -c "$NEW_BRANCH" "$BASE_REF"`.
 - Set `$BRANCH_OUTCOME = "created '$NEW_BRANCH' off '$BASE_REF'"`.
 
-On any git failure (invalid base, ref-format edge case, conflicts the working tree introduces): print git's stderr verbatim and stop. **Do not seed the tracking dir** (Step 6) — leaving nothing partial means the user can fix the underlying git issue and re-run `/ticket-plugin:start` cleanly. The ticket is already transitioned to In Progress on the remote system, which is fine: re-run hits the "already In Progress" branch in Step 3a (idempotent).
+On any git failure (invalid base, ref-format edge case, conflicts the working tree introduces): print git's stderr verbatim and stop. **Do not seed the tracking dir** (Step 6) — leaving nothing partial means the user can fix the underlying git issue and re-run `/slopstop:start` cleanly. The ticket is already transitioned to In Progress on the remote system, which is fine: re-run hits the "already In Progress" branch in Step 3a (idempotent).
 
 ### Step 6 — Seed the tracking dir
 
@@ -270,5 +270,5 @@ On any git failure (invalid base, ref-format edge case, conflicts the working tr
   - Ticket-system detection fails (neither MCP): error, don't seed, don't touch CURRENT, don't touch git.
   - Ticket fetch fails: error, don't seed, don't touch git.
   - Transition fails after a successful fetch: report, continue to branch creation + seeding. Note in `progress.md`.
-  - Branch creation fails (Step 5): report git's stderr verbatim. **Don't seed the tracking dir** — re-running `/ticket-plugin:start` after the user fixes the git issue picks up cleanly (transition is idempotent via Step 3a).
+  - Branch creation fails (Step 5): report git's stderr verbatim. **Don't seed the tracking dir** — re-running `/slopstop:start` after the user fixes the git issue picks up cleanly (transition is idempotent via Step 3a).
   - Disk write fails (Step 6): report and stop. Branch has already been created/switched-to; that's fine — re-running on a clean disk re-seeds cleanly.

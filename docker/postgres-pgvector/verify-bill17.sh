@@ -5,17 +5,17 @@
 #   bash docker/postgres-pgvector/verify-bill17.sh [IMAGE_TAG]
 #
 # Default IMAGE_TAG is the pre-BILL-17 baseline so the script starts RED:
-#   ticket-plugin/postgres-pgvector:bill15
+#   slopstop/postgres-pgvector:bill15
 #
 # After building the BILL-17 image, pass the new tag:
-#   bash docker/postgres-pgvector/verify-bill17.sh ticket-plugin/postgres-pgvector:bill17
+#   bash docker/postgres-pgvector/verify-bill17.sh slopstop/postgres-pgvector:bill17
 #
 # All in-container probes go via `docker exec` (no host port publishing), so
 # the script does not conflict with other containers bound to host 7777/5432.
 
 set -u
 
-IMAGE="${1:-ticket-plugin/postgres-pgvector:bill15}"
+IMAGE="${1:-slopstop/postgres-pgvector:bill15}"
 CONTAINER="ticket-rag-bill17-verify"
 DATA_DIR=$(mktemp -d -t bill17-pgdata.XXXXXX)
 PASS=0

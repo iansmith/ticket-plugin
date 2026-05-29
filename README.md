@@ -1,4 +1,4 @@
-# ticket-plugin
+# slopstop
 
 A Claude Code plugin that wraps the full lifecycle of a Linear or JIRA ticket — investigate, plan, work, PR, review, merge — with per-ticket tracking files that sync back to the ticket on close. Optional parallel-agent fanout in git worktrees when the work decomposes.
 
@@ -11,10 +11,10 @@ When you pick up a ticket, three things should land on disk: a plan you can act 
 The seven slash commands are the loop:
 
 ```
-   /ticket-plugin:start <KEY>
+   /slopstop:start <KEY>
             │
             ▼
-   /ticket-plugin:plan [constraint]      ←─── optional but recommended
+   /slopstop:plan [constraint]      ←─── optional but recommended
             │  ┌──────────────────────────────────────────┐
             │  │  Phase 0: red tests for desired behavior │
             │  │  Phase A: investigate                    │
@@ -25,12 +25,12 @@ The seven slash commands are the loop:
             ▼
         ┌── (work happens) ──┐
         │                    │
-   /ticket-plugin:update     /ticket-plugin:pause       (interrupted)
+   /slopstop:update     /slopstop:pause       (interrupted)
         │                                  │
-        │                                  │      /ticket-plugin:start <KEY>
+        │                                  │      /slopstop:start <KEY>
         │                                  └────┬────────────────────────────┘
         ▼                                       ▼
-   /ticket-plugin:pr
+   /slopstop:pr
             │  ┌─────────────────────────────────────────┐
             │  │  simplify → tests → commit → push → PR  │
             │  │  → CodeRabbit poll → categorize         │
@@ -39,7 +39,7 @@ The seven slash commands are the loop:
         (review iteration)
             │
             ▼
-   /ticket-plugin:merge
+   /slopstop:merge
             │  ┌──────────────────────────────────────────────┐
             │  │  gh pr merge → advance ticket one state      │
             │  │  (e.g. In Progress → In Review, not Done) → │
@@ -51,7 +51,7 @@ The seven slash commands are the loop:
          an intermediate state like "In Review")
             │
             ▼
-   /ticket-plugin:archive    ←─── once ticket is in a terminal Done-type state
+   /slopstop:archive    ←─── once ticket is in a terminal Done-type state
             │  ┌──────────────────────────────────────────────┐
             │  │  push task_plan as ticket description + DoD  │
             │  │  comment + findings comment → mv tracking    │
@@ -65,7 +65,7 @@ A few properties of the workflow that matter:
 
 - **Per-ticket context isolation.** Each ticket gets its own `task_plan.md`, `findings.md`, `progress.md` at `~/.claude/ticket-active/<TICKET>/`. When you're on `MAZ-26`, only `MAZ-26`'s notes load — not the dozen others you've touched recently.
 - **Parallel project work.** `.project-prefix` files plus per-prefix `CURRENT-<PREFIX>` pointers let you have a Linear ticket active in one repo and a JIRA ticket active in another at the same time, in separate Claude sessions.
-- **Durable record back to the ticket.** When you run `/ticket-plugin:archive` (after the ticket has reached a terminal state on the ticket system), the final task plan becomes the ticket's description, a timestamped DoD-confirmation comment walks each Definition-of-Done item with evidence, and the findings become a separate comment. The ticket itself becomes a record of what was actually done, not just a title and a merged PR diff. `/ticket-plugin:merge` does NOT do this — it ships the code and tells you whether to run `:archive` now or wait for QA.
+- **Durable record back to the ticket.** When you run `/slopstop:archive` (after the ticket has reached a terminal state on the ticket system), the final task plan becomes the ticket's description, a timestamped DoD-confirmation comment walks each Definition-of-Done item with evidence, and the findings become a separate comment. The ticket itself becomes a record of what was actually done, not just a title and a merged PR diff. `/slopstop:merge` does NOT do this — it ships the code and tells you whether to run `:archive` now or wait for QA.
 
 ---
 
@@ -90,7 +90,7 @@ This plugin is a **wrapper around a ticket-system MCP and a GitHub backend** —
     The skills expect tools under `mcp__atlassian__*`.
 - **A `.project-prefix` file in each project's working directory.** Contains the ticket prefix for that project (`MAZ`, `PLTF`, `LOU`, …). The skills only ever operate on tickets matching the cwd's prefix.
 
-### Required for `/ticket-plugin:pr` and `/ticket-plugin:merge`
+### Required for `/slopstop:pr` and `/slopstop:merge`
 
 - **A GitHub backend** — one of:
   - **Anthropic's GitHub plugin** (preferred when available, since the skills prefer MCP tools over CLI):
@@ -102,9 +102,9 @@ This plugin is a **wrapper around a ticket-system MCP and a GitHub backend** —
 
 ### Optional but recommended
 
-- **Claude Code's bundled `simplify` skill.** `/ticket-plugin:pr` invokes it on uncommitted changes before committing — runs a reuse/quality/efficiency pass. If you don't have it, `:pr` warns and asks before continuing.
-- **[CodeRabbit](https://www.coderabbit.ai/)** installed on the repo. Free for open source. `/ticket-plugin:pr` polls for CodeRabbit's review comments after opening the PR. If you don't use CodeRabbit, pass `--no-poll` to skip the wait (or the skill times out after 15 minutes and continues).
-- **A test command** the skills can invoke automatically. `/ticket-plugin:plan` Phase 0 and `/ticket-plugin:pr`'s pre-commit gate both want one. They auto-detect from common project files (`Taskfile.yml`, `package.json`, `Makefile`, `Cargo.toml`, `go.mod`, `pyproject.toml`) and ask the user once if detection fails — the answer is cached in `task_plan.md`.
+- **Claude Code's bundled `simplify` skill.** `/slopstop:pr` invokes it on uncommitted changes before committing — runs a reuse/quality/efficiency pass. If you don't have it, `:pr` warns and asks before continuing.
+- **[CodeRabbit](https://www.coderabbit.ai/)** installed on the repo. Free for open source. `/slopstop:pr` polls for CodeRabbit's review comments after opening the PR. If you don't use CodeRabbit, pass `--no-poll` to skip the wait (or the skill times out after 15 minutes and continues).
+- **A test command** the skills can invoke automatically. `/slopstop:plan` Phase 0 and `/slopstop:pr`'s pre-commit gate both want one. They auto-detect from common project files (`Taskfile.yml`, `package.json`, `Makefile`, `Cargo.toml`, `go.mod`, `pyproject.toml`) and ask the user once if detection fails — the answer is cached in `task_plan.md`.
 
 ---
 
@@ -115,27 +115,27 @@ Two install paths depending on which Anthropic app you use.
 ### Claude Code (CLI) — recommended
 
 ```
-/plugin marketplace add iansmith/ticket-plugin
-/plugin install ticket-plugin@ticket-plugin
+/plugin marketplace add iansmith/slopstop
+/plugin install slopstop@slopstop
 ```
 
-After install, commands are namespaced: `/ticket-plugin:start`, `/ticket-plugin:plan`, etc.
+After install, commands are namespaced: `/slopstop:start`, `/slopstop:plan`, etc.
 
-(The repo, the marketplace it hosts, and the plugin inside it all share the name `ticket-plugin` — hence the doubled-up install command.)
+(The repo, the marketplace it hosts, and the plugin inside it all share the name `slopstop` — hence the doubled-up install command.)
 
 ### Claude Desktop — manual install (band-aid until Claude Desktop supports plugins)
 
 > Claude Desktop currently has no `/plugin` manager and no built-in mechanism for installing third-party plugins from a marketplace — only Claude Code (CLI) does. Claude Desktop *does* load standalone slash commands from `~/.claude/commands/`, so this installer is a stopgap that drops the seven commands there directly, bypassing the marketplace entirely. This is a band-aid, not a long-term solution — when Claude Desktop ships plugin install support, this section becomes obsolete and Claude Desktop users will use the marketplace install above.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/master/install-for-claude-desktop.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iansmith/slopstop/master/install-for-claude-desktop.sh | bash
 ```
 
-After install, the commands appear as `/ticket-start`, `/ticket-plan`, etc. (un-namespaced).
+After install, the commands appear as `/slopstop-start`, `/slopstop-plan`, etc. (un-namespaced).
 
-To pin to a specific tagged version: `TICKET_PLUGIN_REF=v1.1.0 bash <(curl -fsSL https://raw.githubusercontent.com/iansmith/ticket-plugin/v1.1.0/install-for-claude-desktop.sh)`.
+To pin to a specific tagged version: `SLOPSTOP_REF=v1.1.0 bash <(curl -fsSL https://raw.githubusercontent.com/iansmith/slopstop/v1.1.0/install-for-claude-desktop.sh)`.
 
-To uninstall: `rm ~/.claude/commands/ticket-{start,plan,pause,update,archive,pr,merge}.md`.
+To uninstall: `rm ~/.claude/commands/slopstop-{start,plan,pause,update,archive,pr,merge}.md`.
 
 ---
 
@@ -155,10 +155,10 @@ The plugin reads this on every invocation. **It only operates on tickets whose k
 
 ## The commands
 
-### `/ticket-plugin:start <KEY>` — start or resume a ticket
+### `/slopstop:start <KEY>` — start or resume a ticket
 
 ```
-/ticket-plugin:start MAZ-26
+/slopstop:start MAZ-26
 ```
 
 Two modes, decided automatically:
@@ -166,15 +166,15 @@ Two modes, decided automatically:
 - **Fresh-start** (no local tracking dir for this ticket): fetches the ticket from Linear/JIRA, transitions it to In Progress, **creates a feature branch named `<type>/<TICKET>`** (e.g. `fix/MAZ-26`, `feat/MAZ-26`) — `<type>` is a Conventional-Commits-style prefix chosen interactively, with a heuristic suggestion when one can be inferred from the ticket's labels or title; a `skip` option opts out of branch creation entirely. If cwd is already on a non-default branch, the skill warns and asks whether to base the new branch off the default branch (typical, clean stack off trunk) or off the current branch (stacking on a feature branch). Then seeds `task_plan.md`, `findings.md`, `progress.md` at `~/.claude/ticket-active/MAZ-26/`.
 - **Resume** (tracking dir already exists): reads the tracking files, prints a summary of where you left off, appends a `## Session <ts>` header to `progress.md`. No ticket-system call, no git.
 
-If a different ticket of the same prefix is already active, `/ticket-plugin:start` runs `/ticket-plugin:update` on the old one first (captures its state) before switching. No "are you sure" prompt — same project, same `.project-prefix`, automatic switch.
+If a different ticket of the same prefix is already active, `/slopstop:start` runs `/slopstop:update` on the old one first (captures its state) before switching. No "are you sure" prompt — same project, same `.project-prefix`, automatic switch.
 
-`/ticket-plugin:start` on the *already-active* ticket is a no-op aside from the resume summary.
+`/slopstop:start` on the *already-active* ticket is a no-op aside from the resume summary.
 
-### `/ticket-plugin:plan [constraint]` — investigate and plan
+### `/slopstop:plan [constraint]` — investigate and plan
 
 ```
-/ticket-plugin:plan
-/ticket-plugin:plan focus on the database layer only
+/slopstop:plan
+/slopstop:plan focus on the database layer only
 ```
 
 Replaces `task_plan.md`'s empty `## Plan` section with a thorough plan grounded in real codebase investigation. The optional textual constraint scopes both investigation and the plan **literally** — out-of-scope work is excluded even if the ticket implies it.
@@ -189,30 +189,30 @@ Internally:
 
 The plan is always saved to disk before agents launch, so an abort at any stage leaves you with a usable plan.
 
-### `/ticket-plugin:update` — mid-session checkpoint
+### `/slopstop:update` — mid-session checkpoint
 
 ```
-/ticket-plugin:update
+/slopstop:update
 ```
 
 Appends a `## Update <ts>` section to `progress.md` capturing: branch, HEAD, working-tree state, completed-since-last-snapshot, current state, next step. Pure local, no MCP calls. The ticket stays active.
 
 Use this when you've made meaningful progress and want context to survive even if the Claude session unexpectedly ends.
 
-### `/ticket-plugin:pause` — interrupted
+### `/slopstop:pause` — interrupted
 
 ```
-/ticket-plugin:pause
+/slopstop:pause
 ```
 
-Like `/ticket-plugin:update`, but with two differences: the section header is `## Pause` (richer template — captures last completed, next step, open questions, mental context), and it **clears** `CURRENT-<PREFIX>`. The ticket stays alive; it's just not the active ticket anymore. Resume by running `/ticket-plugin:start <KEY>` again later.
+Like `/slopstop:update`, but with two differences: the section header is `## Pause` (richer template — captures last completed, next step, open questions, mental context), and it **clears** `CURRENT-<PREFIX>`. The ticket stays alive; it's just not the active ticket anymore. Resume by running `/slopstop:start <KEY>` again later.
 
-### `/ticket-plugin:pr` — open a pull request
+### `/slopstop:pr` — open a pull request
 
 ```
-/ticket-plugin:pr
-/ticket-plugin:pr --base develop
-/ticket-plugin:pr --no-simplify --no-test
+/slopstop:pr
+/slopstop:pr --base develop
+/slopstop:pr --no-simplify --no-test
 ```
 
 End-to-end PR creation:
@@ -226,13 +226,13 @@ End-to-end PR creation:
 7. **Poll CodeRabbit.** Every 60s for up to 15 minutes. Substantive signal is non-zero inline comments OR a finalized review (`CHANGES_REQUESTED` / `APPROVED`). Walkthrough/acknowledgement comments don't end the poll early.
 8. **Categorize.** Each inline comment is verified against the actual code (CodeRabbit hallucinates), then classified: 🔴 Should fix (bug/security/correctness), 🟡 Could fix (style/idiom/refactor with ROI), ⚪ Skip (premise wrong / contradicts convention / pure nit). Stops after presenting — never auto-applies.
 
-### `/ticket-plugin:document` — sync local docs to the ticket
+### `/slopstop:document` — sync local docs to the ticket
 
 ```
-/ticket-plugin:document
-/ticket-plugin:document --dry-run
-/ticket-plugin:document --force
-/ticket-plugin:document MAZ-26      # explicit ticket key
+/slopstop:document
+/slopstop:document --dry-run
+/slopstop:document --force
+/slopstop:document MAZ-26      # explicit ticket key
 ```
 
 Push the current local documentation to the ticket on Linear/JIRA, idempotently:
@@ -247,28 +247,28 @@ Pure remote-sync operation: does NOT change ticket state, does NOT touch local t
 
 **Why this exists.** Many teams treat `In Review` as a real workflow gate — a reviewer (teammate, tech lead, QA, product) reads the *ticket itself* alongside the PR during that state to understand what's being shipped: what was the agreed scope? what's the Definition of Done? what plan was actually executed? Without `:document`, the ticket may still hold only the original problem statement when that reviewer opens it; they see "what was wrong" but nothing about "what's being delivered" or "what they're reviewing for." Run `:document` right after `:merge` (which advances the ticket to `In Review` but deliberately doesn't push docs), and the reviewer has the full picture before deciding whether to advance the ticket toward `Done`. For workflows with no intermediate `In Review` state, `:archive` inlines `:document` anyway — you'd typically only invoke `:document` standalone for mid-ticket checkpoints.
 
-### `/ticket-plugin:archive` — close the local lifecycle
+### `/slopstop:archive` — close the local lifecycle
 
 ```
-/ticket-plugin:archive
+/slopstop:archive
 ```
 
-When you've already moved the ticket to a terminal state on the ticket system yourself: delegates the documentation push to `/ticket-plugin:document` (Step 4 inlines its body), then `mv`s the local tracking dir to `~/.claude/ticket-archive/` and clears `CURRENT-<PREFIX>`.
+When you've already moved the ticket to a terminal state on the ticket system yourself: delegates the documentation push to `/slopstop:document` (Step 4 inlines its body), then `mv`s the local tracking dir to `~/.claude/ticket-archive/` and clears `CURRENT-<PREFIX>`.
 
 Refuses to run if the ticket isn't already in a terminal state on the ticket system. The user controls the transition; this command syncs.
 
-**No `--force` in `:archive`.** If `:document`'s divergence check fires, `:archive` propagates the stop without touching local tracking. Resolve via standalone `/ticket-plugin:document --force` (after eyeballing the diff), then re-run `/ticket-plugin:archive`. The friction is intentional — archive is the irreversible end of the local lifecycle.
+**No `--force` in `:archive`.** If `:document`'s divergence check fires, `:archive` propagates the stop without touching local tracking. Resolve via standalone `/slopstop:document --force` (after eyeballing the diff), then re-run `/slopstop:archive`. The friction is intentional — archive is the irreversible end of the local lifecycle.
 
-### `/ticket-plugin:merge` — ship the code
+### `/slopstop:merge` — ship the code
 
 ```
-/ticket-plugin:merge
-/ticket-plugin:merge --pr 123 --strategy squash
+/slopstop:merge
+/slopstop:merge --pr 123 --strategy squash
 ```
 
 When the PR is review-approved and CI is green: merges the PR via `gh pr merge` (default strategy: squash), **advances the ticket by one state in its workflow** (NOT auto-Done — same-bucket transitions like "In Progress" → "In Review" are preferred over jumping to Done so the team's review / QA gates aren't skipped), propagates the merged-onto branch to all configured remotes, and deletes the local feature branch. The proposed next state is shown in the confirmation prompt before anything irreversible happens.
 
-**`:merge` does NOT archive.** It leaves `~/.claude/ticket-active/$TICKET/` in place and `CURRENT-$PREFIX` still pointing at the ticket. The summary at the end recommends whether to run `/ticket-plugin:archive` now (✅ ticket landed in a terminal Done-type state) or to wait (⚠️ ticket landed in an intermediate state like "In Review" where QA still needs to verify). This separation exists because `:archive` pushes the final task plan as the ticket description and posts a timestamped DoD-confirmation comment — both premature on a workflow where "In Review" is a real gate, not paperwork.
+**`:merge` does NOT archive.** It leaves `~/.claude/ticket-active/$TICKET/` in place and `CURRENT-$PREFIX` still pointing at the ticket. The summary at the end recommends whether to run `/slopstop:archive` now (✅ ticket landed in a terminal Done-type state) or to wait (⚠️ ticket landed in an intermediate state like "In Review" where QA still needs to verify). This separation exists because `:archive` pushes the final task plan as the ticket description and posts a timestamped DoD-confirmation comment — both premature on a workflow where "In Review" is a real gate, not paperwork.
 
 > **`:merge` vs `:archive`** — they're properly separate steps in the lifecycle:
 > - `:merge` ships the **code**: PR merged, ticket advanced one state, branch cleaned up. Local tracking left intact; `CURRENT-$PREFIX` still points at the ticket.
@@ -297,7 +297,7 @@ Open Claude Code in `~/webhooks-service`, which has `.project-prefix` set to `MA
 ### 1. Start the ticket
 
 ```
-> /ticket-plugin:start MAZ-99
+> /slopstop:start MAZ-99
 
 Branch type for MAZ-99?
   Suggested: fix  (from label 'bug')
@@ -336,7 +336,7 @@ _(fill in as you scope the work)_
 ### 2. Plan the work
 
 ```
-> /ticket-plugin:plan focus on the dispatcher + subscriber registry; tests are in tests/
+> /slopstop:plan focus on the dispatcher + subscriber registry; tests are in tests/
 
 Phase 0 — Red tests first (TDD)
 
@@ -451,11 +451,11 @@ Merged 2 agent branches. New HEAD: e5f6789 [MAZ-99] merge agent-2: subscribers.g
 You've decided to add a small README change to the package. Before context might compact:
 
 ```
-> /ticket-plugin:update
+> /slopstop:update
 
 Updated tracking for MAZ-99.
 Wrote: progress.md, task_plan.md (Plan updated with "README cleanup" sub-item)
-Ticket is still active. Pause with /ticket-plugin:pause when done.
+Ticket is still active. Pause with /slopstop:pause when done.
 ```
 
 ### 4. Pause (interrupted)
@@ -463,17 +463,17 @@ Ticket is still active. Pause with /ticket-plugin:pause when done.
 A meeting pulls you away. Quick pause:
 
 ```
-> /ticket-plugin:pause
+> /slopstop:pause
 
 Paused MAZ-99.
 Captured: progress.md
-Resume with: /ticket-plugin:start MAZ-99
+Resume with: /slopstop:start MAZ-99
 ```
 
 ### 5. Resume the next morning
 
 ```
-> /ticket-plugin:start MAZ-99
+> /slopstop:start MAZ-99
 
 Resuming MAZ-99
 
@@ -487,7 +487,7 @@ Resuming MAZ-99
 ### 6. Open the PR
 
 ```
-> /ticket-plugin:pr
+> /slopstop:pr
 
 Step 1 — Simplify pass
   Invoking simplify... no changes needed. Working tree unchanged.
@@ -566,14 +566,14 @@ Walkthrough summary:
 PR: https://github.com/example/webhooks-service/pull/247
 ```
 
-You decide to apply the 🔴 Should-fix (nil check) and one of the 🟡 Could-fix items (UUID type). You make the edits manually, then re-run `/ticket-plugin:pr` — the second invocation skips simplify (clean), runs tests (still green), commits the fixup, pushes, and re-polls. CodeRabbit returns APPROVED this time.
+You decide to apply the 🔴 Should-fix (nil check) and one of the 🟡 Could-fix items (UUID type). You make the edits manually, then re-run `/slopstop:pr` — the second invocation skips simplify (clean), runs tests (still green), commits the fixup, pushes, and re-polls. CodeRabbit returns APPROVED this time.
 
 ### 7. Ship the code
 
 The team reviewer ACKs. CI is green. Time to merge:
 
 ```
-> /ticket-plugin:merge
+> /slopstop:merge
 
 About to merge MAZ-99 and ship the code:
   1. Merge PR #247 (maz-99-renewal-fix → master) with strategy squash
@@ -583,7 +583,7 @@ About to merge MAZ-99 and ship the code:
   3. Switch to master, pull, push master to any non-origin remotes, delete local maz-99-renewal-fix
 
 Local tracking (ticket-active/MAZ-99/) and the ticket description are NOT touched.
-After the merge, the summary will tell you whether to run /ticket-plugin:archive
+After the merge, the summary will tell you whether to run /slopstop:archive
 now or wait.
 
 Proceed? (yes / no / merge-only)
@@ -600,11 +600,11 @@ Local:   ticket-active/MAZ-99/ untouched; CURRENT-MAZ still points to MAZ-99
 
 Next step:
   ⚠️ Ticket is now in 'In Review', which is NOT a terminal/Done state on this
-     workflow. Do NOT run /ticket-plugin:archive yet — the task plan would land
+     workflow. Do NOT run /slopstop:archive yet — the task plan would land
      on the ticket while QA/review is still in progress, and the local tracking
      dir would move out of ticket-active/ prematurely. Wait until the ticket
      reaches a Done-type state (typically after QA sign-off), then run
-     /ticket-plugin:archive.
+     /slopstop:archive.
 ```
 
 MAZ-99 sits in "In Review" on Linear. QA picks it up, verifies the fix against the renewed-endpoint scenario, and moves it to "Done" themselves. You get a Slack ping from the QA lead. Now it's time to close the loop locally.
@@ -612,7 +612,7 @@ MAZ-99 sits in "In Review" on Linear. QA picks it up, verifies the fix against t
 ### 8. Archive — close the loop
 
 ```
-> /ticket-plugin:archive
+> /slopstop:archive
 
 About to archive MAZ-99 (currently in 'Done'):
   1. Update Linear description with final task plan (original desc preserved as appendix)
@@ -645,7 +645,7 @@ Three weeks later when someone re-reads MAZ-99 to understand what changed, they 
 
 Each ticket directory contains three markdown files:
 
-- **`task_plan.md`** — the durable plan. Starts seeded with the ticket's original description; `/ticket-plugin:plan` fills in the **Plan** section. This is what gets pushed back to the ticket's description on archive.
+- **`task_plan.md`** — the durable plan. Starts seeded with the ticket's original description; `/slopstop:plan` fills in the **Plan** section. This is what gets pushed back to the ticket's description on archive.
 - **`findings.md`** — investigation results: root causes, codebase facts, constraints, dead-ends ruled out. Pushed as a comment on archive (unless template-empty).
 - **`progress.md`** — per-session diary with `## Session`, `## Update`, and `## Pause` entries. **Never** pushed to the ticket system — too noisy for the durable record. Lives locally; the commit history + the findings comment + the description tell the durable story.
 
@@ -653,7 +653,7 @@ Each ticket directory contains three markdown files:
 
 ## Design choices
 
-- **`/ticket-plugin:archive` and `:merge` refuse to mark a ticket Done unless it's already terminal on the ticket system.** The user controls the transition; the command syncs. No "Claude marked my ticket Done without telling me" failure mode. (`:merge` itself does the transition as part of its flow — but only after explicit confirmation.)
+- **`/slopstop:archive` and `:merge` refuse to mark a ticket Done unless it's already terminal on the ticket system.** The user controls the transition; the command syncs. No "Claude marked my ticket Done without telling me" failure mode. (`:merge` itself does the transition as part of its flow — but only after explicit confirmation.)
 - **Per-prefix CURRENT pointer.** `CURRENT-MAZ`, `CURRENT-PLTF`, etc. are independent files. Parallel sessions on different project families don't conflict.
 - **The plugin never touches git destructively.** No `--force`, no `--no-verify`, no `--admin`. It commits and merges with confirmation; the user resolves anything that requires those flags manually.
 - **JIRA + Linear are first-class.** Detection is automatic. If both MCPs are configured in the same session, the command asks rather than guessing.
@@ -672,7 +672,7 @@ Each ticket directory contains three markdown files:
       task_plan.md
       findings.md
       progress.md
-      .agents.json        ← only present during /ticket-plugin:plan agent fanout
+      .agents.json        ← only present during /slopstop:plan agent fanout
     PLTF-2180/
       ...
   ticket-archive/
@@ -680,7 +680,7 @@ Each ticket directory contains three markdown files:
       ...
 ```
 
-`CURRENT-<PREFIX>` files are created and cleared by the plugin. `<TICKET>/` directories are created by `/ticket-plugin:start` and moved to `ticket-archive/` by `/ticket-plugin:archive` (or `:merge`).
+`CURRENT-<PREFIX>` files are created and cleared by the plugin. `<TICKET>/` directories are created by `/slopstop:start` and moved to `ticket-archive/` by `/slopstop:archive` (or `:merge`).
 
 ---
 

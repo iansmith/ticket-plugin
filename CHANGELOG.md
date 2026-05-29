@@ -6,6 +6,14 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+### Rebranded — `ticket-plugin` → `slopstop`
+
+- **The project, plugin, and marketplace are renamed from `ticket-plugin` to `slopstop`.** The GitHub repo moves from `iansmith/ticket-plugin` to `iansmith/slopstop`; the plugin manifest `name`, the marketplace `name`, and the marketplace `source.repo` all become `slopstop`. The `BILL` ticket prefix is unchanged.
+- **Command names change.** CLI (namespaced) commands go from `/ticket-plugin:<verb>` to `/slopstop:<verb>` (e.g. `/slopstop:start`, `/slopstop:plan`). Claude Desktop (un-namespaced) commands go from `/ticket-<verb>` to `/slopstop-<verb>` (e.g. `/slopstop-start`), and the desktop installer now writes `slopstop-*.md` files into `~/.claude/commands/`.
+- **Migration for existing users.** Marketplace installs need to re-point at the new repo: `/plugin marketplace remove ticket-plugin`, then `/plugin marketplace add iansmith/slopstop` and `/plugin install slopstop@slopstop`. GitHub redirects the old `iansmith/ticket-plugin` URLs (best-effort) so existing clones and `raw.githubusercontent.com` install URLs keep working, but everyone should move to the new slug. Desktop users re-run the installer and remove the old `~/.claude/commands/ticket-*.md` files.
+- **Unchanged on purpose.** The `BILL` ticket prefix; the runtime state directories `~/.claude/ticket-active/` and `~/.claude/ticket-archive/` (concept-named, shared across every project that uses the plugin); the domain terms `ticket-rag`, `ticket_chunks`, `ticket-doc-sync`; the `rag-service` Python package name.
+- **Why:** rebrand to a distinct product name. Per the release checklist in `.claude/rules/repo-conventions.md`, a plugin rename / changed install-command shape is a **MAJOR** version bump — this should ship as `2.0.0`. (The `[Unreleased]` entries below were authored pre-rebrand and were earmarked for `1.3.0`; how to reconcile that with the major bump — fold into `2.0.0`, or ship `1.3.0` first — is a release-time decision. The command-name references in those entries describe the pre-rebrand `/ticket-plugin:` form.)
+
 ### Added
 
 - **Client-readable Definition of Done.** `/ticket-plugin:plan` Step 2a now drafts a `## Definition of Done` section in `task_plan.md` above the technical Plan. The DoD uses plain language and observable outcomes (not test names or code symbols), aimed at the non-engineer who filed the ticket. Items describe *what the client will observe* and include a `How to verify:` line a non-engineer could execute. The DoD ends up at the top of the ticket description on archive — it's the first thing the client sees when reading the closed ticket.

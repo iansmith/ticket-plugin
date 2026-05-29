@@ -21,7 +21,7 @@ def _chunk(id: int, text: str, score: float = 0.0) -> Chunk:
         source="github",
         provenance="upstream",
         kind="comment",
-        ticket_id="iansmith/ticket-plugin#17",
+        ticket_id="iansmith/slopstop#17",
     )
 
 
@@ -104,7 +104,7 @@ def test_build_knn_sql_all_filters_parameterized():
         source=["github"],
         provenance=["upstream"],
         kind=["comment"],
-        ticket_id="iansmith/ticket-plugin#17",
+        ticket_id="iansmith/slopstop#17",
     )
     sql, params = _build_knn_sql(vec, k=10, filters=filters)
     assert "source = ANY(%s)" in sql
@@ -113,14 +113,14 @@ def test_build_knn_sql_all_filters_parameterized():
     assert "ticket_id = %s" in sql
     # No filter value is ever inlined into the SQL string (injection safety).
     assert "github" not in sql
-    assert "iansmith/ticket-plugin#17" not in sql
+    assert "iansmith/slopstop#17" not in sql
     # Bind order: score-vec, source, provenance, kind, ticket_id, ordering-vec, k.
     assert params == [
         vec,
         ["github"],
         ["upstream"],
         ["comment"],
-        "iansmith/ticket-plugin#17",
+        "iansmith/slopstop#17",
         vec,
         10,
     ]

@@ -7,7 +7,7 @@
 # Installs from the working copy this script lives in, NOT from GitHub —
 # so you can test uncommitted changes on a feature branch in Claude Desktop
 # before opening a PR. Otherwise identical: same destination, same frontmatter
-# stripping, same /ticket-plugin:<name> -> /ticket-<name> rewrites.
+# stripping, same /slopstop:<name> -> /slopstop-<name> rewrites.
 #
 # Run from anywhere; the script resolves its own location:
 #
@@ -30,10 +30,10 @@ if git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   if ! git -C "$SCRIPT_DIR" diff --quiet || ! git -C "$SCRIPT_DIR" diff --cached --quiet; then
     dirty=" (working tree has uncommitted changes)"
   fi
-  echo "Installing ticket-plugin commands from local source: $SCRIPT_DIR"
+  echo "Installing slopstop commands from local source: $SCRIPT_DIR"
   echo "  branch=$branch sha=$sha$dirty"
 else
-  echo "Installing ticket-plugin commands from local source: $SCRIPT_DIR"
+  echo "Installing slopstop commands from local source: $SCRIPT_DIR"
 fi
 
 mkdir -p "$DEST"
@@ -42,17 +42,17 @@ mkdir -p "$DEST"
 # updating one list.
 SED_ARGS=()
 for skill in "${SKILLS[@]}"; do
-  SED_ARGS+=(-e "s|/ticket-plugin:$skill|/ticket-$skill|g")
+  SED_ARGS+=(-e "s|/slopstop:$skill|/slopstop-$skill|g")
 done
 
 for skill in "${SKILLS[@]}"; do
   src="$SCRIPT_DIR/skills/$skill/SKILL.md"
-  dst="$DEST/ticket-$skill.md"
+  dst="$DEST/slopstop-$skill.md"
   if [ ! -f "$src" ]; then
-    echo "  /ticket-$skill — MISSING source at $src; skipping" >&2
+    echo "  /slopstop-$skill — MISSING source at $src; skipping" >&2
     continue
   fi
-  echo "  /ticket-$skill"
+  echo "  /slopstop-$skill"
   awk 'BEGIN { in_fm=0 }
        NR==1 && /^---$/ { in_fm=1; next }
        in_fm && /^---$/ { in_fm=0; next }
@@ -72,5 +72,5 @@ To revert to the released version from GitHub, run the sibling script:
   bash $SCRIPT_DIR/install-for-claude-desktop.sh
 
 To uninstall entirely:
-  rm $DEST/ticket-{$(IFS=,; echo "${SKILLS[*]}")}.md
+  rm $DEST/slopstop-{$(IFS=,; echo "${SKILLS[*]}")}.md
 EOF

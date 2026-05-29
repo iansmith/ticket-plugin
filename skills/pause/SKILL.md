@@ -1,9 +1,9 @@
 ---
-description: Snapshot the active ticket's state to its tracking files. The ticket stays in-flight (switching is git checkout). Use /ticket-plugin:pause when interrupted, before switching to other work. Local-only — never calls JIRA or Linear.
+description: Snapshot the active ticket's state to its tracking files. The ticket stays in-flight (switching is git checkout). Use /slopstop:pause when interrupted, before switching to other work. Local-only — never calls JIRA or Linear.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:pause
+# /slopstop:pause
 
 Snapshot the active ticket's state to its tracking files. The ticket stays in-flight; switching to another ticket is `git checkout <other-branch>`. Local-only — never calls JIRA or Linear.
 
@@ -13,7 +13,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -71,7 +71,7 @@ Fill every section from conversation context. Don't ask the user.
 ```
 Paused $TICKET.
 Captured: <files actually written>
-Resume with: /ticket-plugin:start $TICKET
+Resume with: /slopstop:start $TICKET
 ```
 
 ## Rules

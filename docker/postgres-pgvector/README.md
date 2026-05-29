@@ -1,8 +1,8 @@
 # postgres-pgvector — ticket-rag service container
 
-A self-bootstrapping Docker image bundling Postgres 18 + `pgvector` + the ticket-rag FastAPI app + the bge-m3 encoder and bge-reranker-v2-m3 reranker. The single deployable artifact behind the [BILL-13](https://github.com/iansmith/ticket-plugin/issues/13) umbrella.
+A self-bootstrapping Docker image bundling Postgres 18 + `pgvector` + the ticket-rag FastAPI app + the bge-m3 encoder and bge-reranker-v2-m3 reranker. The single deployable artifact behind the [BILL-13](https://github.com/iansmith/slopstop/issues/13) umbrella.
 
-> The build-context directory keeps its historical name (`docker/postgres-pgvector/`) for git-blame continuity, but the canonical image *tag* is now **`ticket-plugin/rag`** (renamed from `ticket-plugin/postgres-pgvector` in BILL-18 — the old name had become a misnomer once FastAPI + models + the orchestrator layered on top).
+> The build-context directory keeps its historical name (`docker/postgres-pgvector/`) for git-blame continuity, but the canonical image *tag* is now **`slopstop/rag`** (renamed from `slopstop/postgres-pgvector` in BILL-18 — the old name had become a misnomer once FastAPI + models + the orchestrator layered on top).
 
 ## ⚠️ Trust auth is on
 
@@ -20,7 +20,7 @@ Every postgres connection method (Unix socket, IPv4, IPv6) accepts any user with
 
 ## Image size and disk requirements
 
-**Image size:** ~5.7 GB (measured against `ticket-plugin/rag:latest` as of BILL-18 — `docker image inspect ... --format '{{.Size}}'` divided by 1024³). The bulk is the bge-m3 and reranker model weights (~4.5 GB combined) plus the Python + ML stack from `requirements.txt` (~700 MB resident). Shrinking toward the design doc's ~3 GB target (multi-stage Python build, fp16 weights, etc.) is a follow-up — out of scope for BILL-18.
+**Image size:** ~5.7 GB (measured against `slopstop/rag:latest` as of BILL-18 — `docker image inspect ... --format '{{.Size}}'` divided by 1024³). The bulk is the bge-m3 and reranker model weights (~4.5 GB combined) plus the Python + ML stack from `requirements.txt` (~700 MB resident). Shrinking toward the design doc's ~3 GB target (multi-stage Python build, fp16 weights, etc.) is a follow-up — out of scope for BILL-18.
 
 **Peak Docker disk during a from-scratch build:** ~12-13 GB. Breakdown — `pgvector/pgvector:0.8.2-pg18` + `python:3.12-slim-bookworm` base images (~1.5 GB combined) + transient build state (pip downloads, dpkg unpacks, model COPYs in flight ≈ 4-5 GB) + the final 6 GB image being exported. A clean Docker Desktop install with its default VM allocation (typically 64 GB) has plenty of headroom. If disk pressure shows up after many rebuild cycles, `make rag-clean-deep` clears both the rag images and the BuildKit cache.
 
@@ -31,10 +31,10 @@ Every postgres connection method (Unix socket, IPv4, IPv6) accepts any user with
 make rag-build
 ```
 
-`make rag-build` tags the image as both `ticket-plugin/rag:<git-sha>` (immutable per commit) and `ticket-plugin/rag:latest` (moving pointer to the last successful build). Under the hood it just runs:
+`make rag-build` tags the image as both `slopstop/rag:<git-sha>` (immutable per commit) and `slopstop/rag:latest` (moving pointer to the last successful build). Under the hood it just runs:
 
 ```bash
-docker build -t ticket-plugin/rag:$(git rev-parse --short HEAD) -t ticket-plugin/rag:latest docker/postgres-pgvector/
+docker build -t slopstop/rag:$(git rev-parse --short HEAD) -t slopstop/rag:latest docker/postgres-pgvector/
 ```
 
 The Dockerfile's layer order is intentional — the most-changing layer (the FastAPI app code) is last, so editing `app/main.py` and re-running `make rag-build` rebuilds only that single layer; the postgres base, system deps, Python deps, models, schema, and entrypoint stay cached.
@@ -50,7 +50,7 @@ docker run -d \
   -v "$PWD/pgdata:/var/lib/postgresql" \
   -p 127.0.0.1:5432:5432 \
   -p 127.0.0.1:7777:7777 \
-  ticket-plugin/rag:latest
+  slopstop/rag:latest
 ```
 
 The repo ships an empty `pgdata/` at its root (with a `.gitkeep` so the directory is tracked but its contents are gitignored). After the first `docker run` against it, `pgdata/18/docker/` contains the live cluster. Wipe `pgdata/18/` to start over from a clean initdb.
@@ -68,7 +68,7 @@ The end-to-end smoke test is a single command:
 make rag-run
 ```
 
-This builds (or reuses) the image, then runs `verify-bill17.sh` against `ticket-plugin/rag:latest`. Output ends with `Results: 8 passed, 0 failed` when healthy. Eight checks cover fresh-volume boot, schema presence, uvicorn startup, no FATAL/panic/Traceback in logs, clean stop within 15s with exit 0, and clean restart with reused volume.
+This builds (or reuses) the image, then runs `verify-bill17.sh` against `slopstop/rag:latest`. Output ends with `Results: 8 passed, 0 failed` when healthy. Eight checks cover fresh-volume boot, schema presence, uvicorn startup, no FATAL/panic/Traceback in logs, clean stop within 15s with exit 0, and clean restart with reused volume.
 
 For fine-grained diagnostics:
 
@@ -86,7 +86,7 @@ psql -h 127.0.0.1 -p 5432 -U postgres -c "SELECT to_regclass('public.ticket_chun
 
 The `ticket_chunks` table is created by the entrypoint, not by `psql` from the host. `\d ticket_chunks` should show all the columns + indexes defined in `schema/001_ticket_chunks.sql`.
 
-> **Note:** `verify-bill17.sh`'s default-arg image (`ticket-plugin/postgres-pgvector:bill15`) is a historical RED-baseline that's no longer kept around locally. Always invoke with an explicit tag; `make rag-run` does this for you.
+> **Note:** `verify-bill17.sh`'s default-arg image (`slopstop/postgres-pgvector:bill15`) is a historical RED-baseline that's no longer kept around locally. Always invoke with an explicit tag; `make rag-run` does this for you.
 
 ## Stop / restart
 
@@ -100,11 +100,11 @@ Clean stop is expected to complete within ~10 seconds. The container exits with 
 ## Cleanup
 
 ```bash
-make rag-clean         # remove ticket-plugin/rag images + smoke-test container
+make rag-clean         # remove slopstop/rag images + smoke-test container
 make rag-clean-deep    # all of the above, PLUS prune BuildKit's build cache
 ```
 
-`rag-clean` removes the `ticket-plugin/rag` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Reach for `rag-clean-deep` when Docker Desktop VM disk pressure accumulates from repeated builds — it adds `docker builder prune -a -f` which reclaims the layer cache.
+`rag-clean` removes the `slopstop/rag` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Reach for `rag-clean-deep` when Docker Desktop VM disk pressure accumulates from repeated builds — it adds `docker builder prune -a -f` which reclaims the layer cache.
 
 Neither target touches the host's `pgdata/` directory or any other data you mounted — that's your data, not ours to delete.
 
@@ -118,11 +118,11 @@ In one sentence: postgres starts via the upstream `docker-entrypoint.sh postgres
 
 | Ticket | Layer | Status |
 |---|---|---|
-| [BILL-12](https://github.com/iansmith/ticket-plugin/issues/12) | Postgres + pgvector, externally-mounted data, trust auth | merged |
-| [BILL-14](https://github.com/iansmith/ticket-plugin/issues/14) | Python 3.12 + FastAPI on top | merged |
-| [BILL-15](https://github.com/iansmith/ticket-plugin/issues/15) | `bge-m3` encoder + `bge-reranker-v2-m3` baked in | merged |
-| [BILL-16](https://github.com/iansmith/ticket-plugin/issues/16) | `ticket_chunks` schema files (applied by BILL-17 entrypoint) | merged |
-| [BILL-17](https://github.com/iansmith/ticket-plugin/issues/17) | Single entrypoint orchestrating postgres + schema + uvicorn; SIGTERM; smoke test | merged |
-| **[BILL-18](https://github.com/iansmith/ticket-plugin/issues/18) (this)** | Reproducible build pipeline (Makefile + layer-cache + image-size docs) | landing |
+| [BILL-12](https://github.com/iansmith/slopstop/issues/12) | Postgres + pgvector, externally-mounted data, trust auth | merged |
+| [BILL-14](https://github.com/iansmith/slopstop/issues/14) | Python 3.12 + FastAPI on top | merged |
+| [BILL-15](https://github.com/iansmith/slopstop/issues/15) | `bge-m3` encoder + `bge-reranker-v2-m3` baked in | merged |
+| [BILL-16](https://github.com/iansmith/slopstop/issues/16) | `ticket_chunks` schema files (applied by BILL-17 entrypoint) | merged |
+| [BILL-17](https://github.com/iansmith/slopstop/issues/17) | Single entrypoint orchestrating postgres + schema + uvicorn; SIGTERM; smoke test | merged |
+| **[BILL-18](https://github.com/iansmith/slopstop/issues/18) (this)** | Reproducible build pipeline (Makefile + layer-cache + image-size docs) | landing |
 
-After BILL-18 closes, the [BILL-13](https://github.com/iansmith/ticket-plugin/issues/13) umbrella has shipped its full scope: a self-bootstrapping, reproducibly-built, smoke-tested service container. Real ticket-search query endpoints (`/search`, `/local/sync`, etc.) are tracked under a separate umbrella to be filed once BILL-13 wraps.
+After BILL-18 closes, the [BILL-13](https://github.com/iansmith/slopstop/issues/13) umbrella has shipped its full scope: a self-bootstrapping, reproducibly-built, smoke-tested service container. Real ticket-search query endpoints (`/search`, `/local/sync`, etc.) are tracked under a separate umbrella to be filed once BILL-13 wraps.

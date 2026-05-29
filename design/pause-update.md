@@ -38,8 +38,8 @@ Re-charter the two files to match their actual purpose without creating new upst
 ## Scope
 
 Two SKILL.md files only:
-- `ticket-plugin/skills/pause/SKILL.md`
-- `ticket-plugin/skills/update/SKILL.md`
+- `slopstop/skills/pause/SKILL.md`
+- `slopstop/skills/update/SKILL.md`
 
 ## Restructured `:pause`
 

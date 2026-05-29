@@ -80,14 +80,14 @@ note "Phase B — build"
 
 GIT_SHA=$(git rev-parse --short HEAD)
 
-# Check 6 — `make rag-build` succeeds AND tags both ticket-plugin/rag:latest
-# and ticket-plugin/rag:<git-sha>.
+# Check 6 — `make rag-build` succeeds AND tags both slopstop/rag:latest
+# and slopstop/rag:<git-sha>.
 build_ok() {
     make rag-build > /tmp/bill18-build.log 2>&1 || return 1
-    docker image inspect "ticket-plugin/rag:latest"    >/dev/null 2>&1 || return 1
-    docker image inspect "ticket-plugin/rag:$GIT_SHA"  >/dev/null 2>&1 || return 1
+    docker image inspect "slopstop/rag:latest"    >/dev/null 2>&1 || return 1
+    docker image inspect "slopstop/rag:$GIT_SHA"  >/dev/null 2>&1 || return 1
 }
-check "make rag-build produces ticket-plugin/rag:latest AND :<git-sha>" build_ok
+check "make rag-build produces slopstop/rag:latest AND :<git-sha>" build_ok
 
 # Check 7 — README's documented size is within ±10% of actual.
 size_match() {
@@ -96,7 +96,7 @@ size_match() {
                     docker/postgres-pgvector/README.md \
                     | grep -oE '[0-9]+(\.[0-9]+)?' | head -1) || return 1
     [ -z "$documented_gb" ] && return 1
-    actual_bytes=$(docker image inspect ticket-plugin/rag:latest --format '{{.Size}}' 2>/dev/null) || return 1
+    actual_bytes=$(docker image inspect slopstop/rag:latest --format '{{.Size}}' 2>/dev/null) || return 1
     python3 -c "
 documented = float('$documented_gb')
 actual_gb  = $actual_bytes / 1024**3
@@ -104,7 +104,7 @@ import sys
 sys.exit(0 if documented * 0.9 <= actual_gb <= documented * 1.1 else 1)
 "
 }
-check "README image size within +/-10% of actual ticket-plugin/rag:latest" size_match
+check "README image size within +/-10% of actual slopstop/rag:latest" size_match
 
 # Check 8 — layer cache: editing ONLY the FastAPI app (rag_service/main.py)
 # and rebuilding hits cache for every layer up to and including the model
@@ -198,12 +198,12 @@ check "make rag-run runs verify-bill17.sh against :latest with 0 failures" \
 # --------------------------------------------------------------------------
 note "Phase D — cleanup"
 
-# Check 10 — `make rag-clean` removes both ticket-plugin/rag tags and any
+# Check 10 — `make rag-clean` removes both slopstop/rag tags and any
 # leftover smoke-test container.
 clean_ok() {
     make rag-clean > /tmp/bill18-clean.log 2>&1 || return 1
-    # No ticket-plugin/rag images of any tag.
-    if docker images --format '{{.Repository}}' | grep -qx 'ticket-plugin/rag'; then
+    # No slopstop/rag images of any tag.
+    if docker images --format '{{.Repository}}' | grep -qx 'slopstop/rag'; then
         return 1
     fi
     # No smoke-test container (verify-bill17.sh's leftover name).
@@ -212,7 +212,7 @@ clean_ok() {
     fi
     return 0
 }
-check "make rag-clean removes ticket-plugin/rag images and test containers" clean_ok
+check "make rag-clean removes slopstop/rag images and test containers" clean_ok
 
 echo "---"
 echo "Results: $PASS passed, $FAIL failed"

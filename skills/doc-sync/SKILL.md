@@ -1,9 +1,9 @@
 ---
-description: Mirror the design/ directory to the project's ticket-system documentation store (GitHub wiki, Linear Docs). One-way push; design/ files unchanged; orphan pages pruned. Reads .project-conf.toml for the backend. Use /ticket-plugin:doc-sync.
+description: Mirror the design/ directory to the project's ticket-system documentation store (GitHub wiki, Linear Docs). One-way push; design/ files unchanged; orphan pages pruned. Reads .project-conf.toml for the backend. Use /slopstop:doc-sync.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:doc-sync
+# /slopstop:doc-sync
 
 Mirror `design/*.md` to the project's documentation store. One-way push — `design/` is the source of truth; the doc-store copy is overwritten on each sync.
 
@@ -16,7 +16,7 @@ Read `.project-conf.toml` from cwd. Extract:
 - `system` → `$SYSTEM` ∈ {`linear`, `jira`, `github`}
 - `key`    → `$KEY`
 
-If `.project-conf.toml` is missing: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init or create the file manually."`
+If `.project-conf.toml` is missing: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init or create the file manually."`
 
 ## Arguments
 
@@ -70,7 +70,7 @@ To unblock:
   1. Visit https://github.com/$KEY/wiki
   2. Click "Create the first page" and save anything — the content
      does not matter; it will be overwritten on the next sync.
-  3. Re-run /ticket-plugin:doc-sync.
+  3. Re-run /slopstop:doc-sync.
 EOF
        exit 0
    fi

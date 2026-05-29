@@ -1,9 +1,9 @@
 ---
-description: Mid-session checkpoint to the active ticket's progress.md. Use /ticket-plugin:update to snapshot what's been done so far during the same ticket session. The ticket stays active. Local-only — never calls JIRA or Linear.
+description: Mid-session checkpoint to the active ticket's progress.md. Use /slopstop:update to snapshot what's been done so far during the same ticket session. The ticket stays active. Local-only — never calls JIRA or Linear.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:update
+# /slopstop:update
 
 Snapshot mid-session progress to the active ticket's tracking files. The ticket stays active (the branch doesn't change). Local-only — never calls JIRA or Linear.
 
@@ -13,7 +13,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -68,7 +68,7 @@ Fill every section from conversation context. Don't ask the user.
 ```
 Updated tracking for $TICKET.
 Wrote: <files actually modified>
-Ticket is still active. Pause with /ticket-plugin:pause when done.
+Ticket is still active. Pause with /slopstop:pause when done.
 ```
 
 ## Rules

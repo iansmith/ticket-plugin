@@ -4,11 +4,11 @@
 
 ## Summary
 
-A skill that mirrors the `design/` directory's markdown files to the project's ticket-system documentation store, on demand. One-way push: the committed `design/` files remain the source of truth; the doc-store copy is a convenience view, refreshed wholesale on each sync. Supersedes the spec in [iansmith/ticket-plugin#1](https://github.com/iansmith/ticket-plugin/issues/1).
+A skill that mirrors the `design/` directory's markdown files to the project's ticket-system documentation store, on demand. One-way push: the committed `design/` files remain the source of truth; the doc-store copy is a convenience view, refreshed wholesale on each sync. Supersedes the spec in [iansmith/slopstop#1](https://github.com/iansmith/slopstop/issues/1).
 
 ## Goals
 
-- Single-command sync: `/ticket-plugin:doc-sync` reads `design/` and pushes to whatever doc store the project's `.project-conf.toml` system maps to.
+- Single-command sync: `/slopstop:doc-sync` reads `design/` and pushes to whatever doc store the project's `.project-conf.toml` system maps to.
 - Idempotent: re-running with no `design/` changes is a no-op.
 - Orphan-pruning: pages in the doc store without a corresponding `design/` file are deleted on each sync.
 - Backend-agnostic at the user level: same command across backends; behavior varies by `system`.
@@ -117,7 +117,7 @@ Out of scope. The skill stops with `"Confluence sync not yet supported."` for `s
 
 ## Acceptance
 
-1. On a GH-backed project, `/ticket-plugin:doc-sync` mirrors `design/*.md` to the repo wiki. Re-running with no `design/` changes produces no commit.
+1. On a GH-backed project, `/slopstop:doc-sync` mirrors `design/*.md` to the repo wiki. Re-running with no `design/` changes produces no commit.
 2. Adding a new `design/foo.md` and re-running creates the wiki page.
 3. Deleting `design/bar.md` and re-running deletes the corresponding wiki page (orphan prune).
 4. A frontmatter `title:` correctly overrides the default page title.

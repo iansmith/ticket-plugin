@@ -240,7 +240,7 @@ EOF
 
 Github silently accepts adding a label that's already on the issue (idempotent by default). The skill doesn't need to pre-check.
 
-**Pre-condition:** `$LABEL` must already exist on the repo. The label `status:in-progress` is created by `/ticket-gh-init` (when implemented; see design/ticket-gh-init.md). For the bootstrap on ticket-plugin itself, the label was created manually before BILL-8 started.
+**Pre-condition:** `$LABEL` must already exist on the repo. The label `status:in-progress` is created by `/ticket-gh-init` (when implemented; see design/ticket-gh-init.md). For the bootstrap on slopstop itself, the label was created manually before BILL-8 started.
 
 ### Remove label
 

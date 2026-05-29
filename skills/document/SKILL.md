@@ -1,9 +1,9 @@
 ---
-description: Sync the active ticket's local tracking documentation (task plan, DoD-confirmation evidence, findings) to the ticket on Linear/JIRA. Use /ticket-plugin:document to push or refresh the description + DoD-confirmation comment + findings comment WITHOUT ending the local lifecycle (no archive, no local-dir move, no state change). Idempotent — running it twice on unchanged local state is a clean no-op. Safe by default — if the ticket already has managed documentation that differs from what would be pushed (e.g., someone hand-edited the description), stops with a per-artifact diff explanation and refuses to push anything. --force overrides the divergence check. --dry-run shows what would happen without doing it. Auto-detects ticket system.
+description: Sync the active ticket's local tracking documentation (task plan, DoD-confirmation evidence, findings) to the ticket on Linear/JIRA. Use /slopstop:document to push or refresh the description + DoD-confirmation comment + findings comment WITHOUT ending the local lifecycle (no archive, no local-dir move, no state change). Idempotent — running it twice on unchanged local state is a clean no-op. Safe by default — if the ticket already has managed documentation that differs from what would be pushed (e.g., someone hand-edited the description), stops with a per-artifact diff explanation and refuses to push anything. --force overrides the divergence check. --dry-run shows what would happen without doing it. Auto-detects ticket system.
 disable-model-invocation: true
 ---
 
-# /ticket-plugin:document
+# /slopstop:document
 
 Sync the active ticket's local documentation to the ticket on Linear/JIRA. Pure remote sync — does NOT touch local tracking, does NOT change ticket state, does NOT archive.
 
@@ -23,7 +23,7 @@ Read `.project-conf.toml` from cwd. Extract `key` (Linear team key, JIRA project
 
 **Only operate on `$PREFIX`'s tickets. The branch-IS-selection parser only matches `$PREFIX-\d+`, so a branch encoding a different project's prefix correctly fails the no-match check.**
 
-If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /ticket-plugin:gh-init (for GitHub) or create the file manually with system + key."`
+If `.project-conf.toml` is missing in cwd: stop with `"No .project-conf.toml in cwd. Run /slopstop:gh-init (for GitHub) or create the file manually with system + key."`
 
 ## Arguments
 
@@ -191,11 +191,11 @@ STOP — ticket $TICKET has managed documentation that differs from what would b
 Likely causes:
   - Someone edited the ticket on $SYSTEM after a prior :document/:archive push.
   - Your local task_plan.md / findings.md has been updated since the last push and represents a divergent intent.
-  - A different /ticket-plugin session (different cwd, different machine) pushed an alternative version.
+  - A different /slopstop session (different cwd, different machine) pushed an alternative version.
 
 To proceed:
-  - Run /ticket-plugin:document --force to overwrite the ticket's version with the local version. (Recommended only after eyeballing the diff above.)
-  - OR reconcile manually: edit task_plan.md / findings.md to match the ticket, OR edit the ticket to match local, then re-run /ticket-plugin:document.
+  - Run /slopstop:document --force to overwrite the ticket's version with the local version. (Recommended only after eyeballing the diff above.)
+  - OR reconcile manually: edit task_plan.md / findings.md to match the ticket, OR edit the ticket to match local, then re-run /slopstop:document.
   - --dry-run shows the diff again without pushing.
 
 No remote calls made. Local tracking unchanged.
@@ -255,7 +255,7 @@ For `--dry-run`, replace each verb in the summary lines with the conditional ("w
 
 ## Rules
 
-- **Does NOT change ticket state. Does NOT touch local tracking.** Those belong to `/ticket-plugin:archive`. `:document` is a pure remote-sync operation, callable at any point in a ticket's life.
+- **Does NOT change ticket state. Does NOT touch local tracking.** Those belong to `/slopstop:archive`. `:document` is a pure remote-sync operation, callable at any point in a ticket's life.
 - **Idempotent.** Same local state + same ticket state → second consecutive run is a clean no-op (all artifacts `unchanged`).
 - **Safe by default.** If the ticket has a managed version that differs from expected, refuse-and-explain. `--force` is the explicit escape hatch.
 - **All-or-nothing on push.** If ANY artifact is `divergent` without `--force`, NONE of the artifacts get pushed. Don't half-publish.
@@ -270,7 +270,7 @@ For `--dry-run`, replace each verb in the summary lines with the conditional ("w
 
 - **At the "In Review" workflow gate, so reviewers can review the *ticket* too.** This is the headline use case. Many teams use `In Review` as a real gate — a reviewer (teammate, tech lead, QA, product owner) reads the *ticket itself* alongside the PR to understand what's being shipped: what was the agreed scope? what's the Definition of Done? what plan was actually executed? `:document` is what puts those answers on the ticket. Without it, the ticket may still hold only the original problem statement when the reviewer opens it — they see "what was wrong" but nothing about "what's being delivered" or "what they're reviewing for." Run `:document` right after `:merge` (which advances the ticket to `In Review` but deliberately does not push docs), and the reviewer has the full picture before deciding whether to advance the ticket toward `Done`.
 - **Standalone, mid-ticket checkpoint.** Push a snapshot of the current docs to the ticket for stakeholder visibility (PM wants to see how the plan is shaping up; client filed the ticket and wants to see progress on the DoD; etc.), then keep working. Re-run anytime — idempotent.
-- **Inlined by `/ticket-plugin:archive`.** Archive's Step 4 inlines this skill's body to publish the final docs, then proceeds to its Step 5 local move. If `:document` stops on divergence, `:archive` propagates the stop and the local dir stays put for clean re-run after the user resolves the divergence.
+- **Inlined by `/slopstop:archive`.** Archive's Step 4 inlines this skill's body to publish the final docs, then proceeds to its Step 5 local move. If `:document` stops on divergence, `:archive` propagates the stop and the local dir stays put for clean re-run after the user resolves the divergence.
 
 ## Where `:document` fits in the lifecycle
 
