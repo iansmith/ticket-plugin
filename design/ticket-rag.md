@@ -378,7 +378,7 @@ The MCP wrapper itself is stateless.
 docker run -d --name ticket-rag \
   -p 127.0.0.1:7777:7777 \
   -v ticket-rag-data:/var/lib/postgresql/data \
-  slopstop:latest
+  slopstop-rag:latest
 ```
 
 127.0.0.1 binding is non-negotiable. No port published to `0.0.0.0`.

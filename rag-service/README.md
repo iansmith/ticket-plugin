@@ -37,7 +37,7 @@ Code that doesn't follow that doc's patterns is harder to test and will get push
 The service runs inside the container shipped by BILL-13. To exercise it locally:
 
 ```bash
-make rag-build    # from the repo root — builds slopstop:latest
+make rag-build    # from the repo root — builds slopstop-rag:latest
 make rag-run      # builds (if needed) + runs the BILL-17 smoke test
 make rag-clean    # removes the image and any test containers
 ```

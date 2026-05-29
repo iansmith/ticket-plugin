@@ -2,7 +2,7 @@
 
 A self-bootstrapping Docker image bundling Postgres 18 + `pgvector` + the ticket-rag FastAPI app + the bge-m3 encoder and bge-reranker-v2-m3 reranker. The single deployable artifact behind the [BILL-13](https://github.com/iansmith/slopstop/issues/13) umbrella.
 
-> The build-context directory keeps its historical name (`docker/postgres-pgvector/`) for git-blame continuity, but the canonical image *tag* is now **`slopstop`**. (Earlier in the project's history this image was tagged `postgres-pgvector` and then `rag` under the old `ticket-plugin` name — both became misnomers once FastAPI + models + the orchestrator layered on top — before the whole project was rebranded to `slopstop` in BILL-40.)
+> The build-context directory keeps its historical name (`docker/postgres-pgvector/`) for git-blame continuity, but the canonical image *tag* is now **`slopstop-rag`**. (Earlier in the project's history this image was tagged `postgres-pgvector` and then `rag` under the old `ticket-plugin` name — both became misnomers once FastAPI + models + the orchestrator layered on top — before the whole project was rebranded to `slopstop` in BILL-40.)
 
 ## ⚠️ Trust auth is on
 
@@ -20,7 +20,7 @@ Every postgres connection method (Unix socket, IPv4, IPv6) accepts any user with
 
 ## Image size and disk requirements
 
-**Image size:** ~5.7 GB (measured against `slopstop:latest` as of BILL-18 — `docker image inspect ... --format '{{.Size}}'` divided by 1024³). The bulk is the bge-m3 and reranker model weights (~4.5 GB combined) plus the Python + ML stack from `requirements.txt` (~700 MB resident). Shrinking toward the design doc's ~3 GB target (multi-stage Python build, fp16 weights, etc.) is a follow-up — out of scope for BILL-18.
+**Image size:** ~5.7 GB (measured against `slopstop-rag:latest` as of BILL-18 — `docker image inspect ... --format '{{.Size}}'` divided by 1024³). The bulk is the bge-m3 and reranker model weights (~4.5 GB combined) plus the Python + ML stack from `requirements.txt` (~700 MB resident). Shrinking toward the design doc's ~3 GB target (multi-stage Python build, fp16 weights, etc.) is a follow-up — out of scope for BILL-18.
 
 **Peak Docker disk during a from-scratch build:** ~12-13 GB. Breakdown — `pgvector/pgvector:0.8.2-pg18` + `python:3.12-slim-bookworm` base images (~1.5 GB combined) + transient build state (pip downloads, dpkg unpacks, model COPYs in flight ≈ 4-5 GB) + the final 6 GB image being exported. A clean Docker Desktop install with its default VM allocation (typically 64 GB) has plenty of headroom. If disk pressure shows up after many rebuild cycles, `make rag-clean-deep` clears both the rag images and the BuildKit cache.
 
@@ -31,10 +31,10 @@ Every postgres connection method (Unix socket, IPv4, IPv6) accepts any user with
 make rag-build
 ```
 
-`make rag-build` tags the image as both `slopstop:<git-sha>` (immutable per commit) and `slopstop:latest` (moving pointer to the last successful build). Under the hood it just runs:
+`make rag-build` tags the image as both `slopstop-rag:<git-sha>` (immutable per commit) and `slopstop-rag:latest` (moving pointer to the last successful build). Under the hood it just runs:
 
 ```bash
-docker build -t slopstop:$(git rev-parse --short HEAD) -t slopstop:latest docker/postgres-pgvector/
+docker build -t slopstop-rag:$(git rev-parse --short HEAD) -t slopstop-rag:latest docker/postgres-pgvector/
 ```
 
 The Dockerfile's layer order is intentional — the most-changing layer (the FastAPI app code) is last, so editing `app/main.py` and re-running `make rag-build` rebuilds only that single layer; the postgres base, system deps, Python deps, models, schema, and entrypoint stay cached.
@@ -50,7 +50,7 @@ docker run -d \
   -v "$PWD/pgdata:/var/lib/postgresql" \
   -p 127.0.0.1:5432:5432 \
   -p 127.0.0.1:7777:7777 \
-  slopstop:latest
+  slopstop-rag:latest
 ```
 
 The repo ships an empty `pgdata/` at its root (with a `.gitkeep` so the directory is tracked but its contents are gitignored). After the first `docker run` against it, `pgdata/18/docker/` contains the live cluster. Wipe `pgdata/18/` to start over from a clean initdb.
@@ -68,7 +68,7 @@ The end-to-end smoke test is a single command:
 make rag-run
 ```
 
-This builds (or reuses) the image, then runs `verify-bill17.sh` against `slopstop:latest`. Output ends with `Results: 8 passed, 0 failed` when healthy. Eight checks cover fresh-volume boot, schema presence, uvicorn startup, no FATAL/panic/Traceback in logs, clean stop within 15s with exit 0, and clean restart with reused volume.
+This builds (or reuses) the image, then runs `verify-bill17.sh` against `slopstop-rag:latest`. Output ends with `Results: 8 passed, 0 failed` when healthy. Eight checks cover fresh-volume boot, schema presence, uvicorn startup, no FATAL/panic/Traceback in logs, clean stop within 15s with exit 0, and clean restart with reused volume.
 
 For fine-grained diagnostics:
 
@@ -100,11 +100,11 @@ Clean stop is expected to complete within ~10 seconds. The container exits with 
 ## Cleanup
 
 ```bash
-make rag-clean         # remove slopstop images + smoke-test container
+make rag-clean         # remove slopstop-rag images + smoke-test container
 make rag-clean-deep    # all of the above, PLUS prune BuildKit's build cache
 ```
 
-`rag-clean` removes the `slopstop` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Reach for `rag-clean-deep` when Docker Desktop VM disk pressure accumulates from repeated builds — it adds `docker builder prune -a -f` which reclaims the layer cache.
+`rag-clean` removes the `slopstop-rag` images (all tags) and any leftover `ticket-rag-bill17-verify` container from prior smoke-test runs. Reach for `rag-clean-deep` when Docker Desktop VM disk pressure accumulates from repeated builds — it adds `docker builder prune -a -f` which reclaims the layer cache.
 
 Neither target touches the host's `pgdata/` directory or any other data you mounted — that's your data, not ours to delete.
 

@@ -362,7 +362,7 @@ Runs the same suite where `torch`, `sentence-transformers`, the real models, and
 
 ```bash
 docker run --rm -v "$PWD/rag-service:/work" -w /work --entrypoint bash \
-  slopstop:latest -c "PYTHONPATH=/work python -m pytest tests/"
+  slopstop-rag:latest -c "PYTHONPATH=/work python -m pytest tests/"
 ```
 
 Use the host venv for the edit-run-edit loop; run the in-image pass before opening a PR (and the Docker-level `verify-bill17.sh` / `verify-bill18.sh` gates remain the integration source of truth).
