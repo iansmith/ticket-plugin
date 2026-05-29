@@ -127,7 +127,7 @@ The merge advances the ticket by **one** state in the workflow — not auto-Done
 Github has no introspectable workflow — the shape is declared in `.project-conf.toml`'s `[status_labels]`. No "preference logic" needed; the dispatch is hardcoded by workflow shape.
 
 - Parse `$OWNER` / `$REPO` from `key`, `$N` from `$TICKET`.
-- Read `$IN_PROGRESS_LABEL` and `$IN_REVIEW_LABEL` from `[status_labels].in_progress` and `[status_labels].in_review` via the snippet in `design/github-backend-primitives.md`. `$IN_PROGRESS_LABEL` is required (stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."` if missing). `$IN_REVIEW_LABEL` may be empty.
+- Read `$IN_PROGRESS_LABEL` and `$IN_REVIEW_LABEL` from `[status_labels].in_progress` and `[status_labels].in_review` via the snippet in `design/github-backend-primitives.md`. `$IN_PROGRESS_LABEL` is required (stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /slopstop:gh-init or add it manually."` if missing). `$IN_REVIEW_LABEL` may be empty.
 - Fetch current state:
   - MCP path: `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)` → read `state`, `labels`.
   - CLI path: `$GH issue view $N --json state,labels`.

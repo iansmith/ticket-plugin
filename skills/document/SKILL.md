@@ -124,7 +124,7 @@ Confirmed at: <UTC timestamp, ISO 8601>
 
 Evidence-gathering sources, per DoD item:
 
-- **Phase 0 red test status:** if `task_plan.md` has a `**Test command:**` line, run it (or rely on the most recent test result captured in `progress.md` — typically a `## /ticket-pr` or `## Implementation` section). Match red-test names against DoD items to confirm green.
+- **Phase 0 red test status:** if `task_plan.md` has a `**Test command:**` line, run it (or rely on the most recent test result captured in `progress.md` — typically a `## /slopstop:pr` or `## Implementation` section). Match red-test names against DoD items to confirm green.
 - **Commits and PR:** `gh pr list --search "$TICKET" --state merged --json number,url,mergeCommit` for the merged PR + merge commit SHA. `git log --grep "[$TICKET]" --oneline` for ticket-anchored commits. (When inlined by `:archive` after a `:merge`-or-manual-merge has already happened, the merge commit and PR URL are likely captured in `progress.md` already.)
 - **Manual / observable verification:** read `progress.md` for `## Update` sections that document hands-on verification.
 

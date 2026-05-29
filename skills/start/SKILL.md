@@ -97,7 +97,7 @@ See `design/github-backend-primitives.md` for the full primitives + rationale.
 - **MCP path** (`$GH_BACKEND = "MCP"`): call `${GH_MCP_NS}get_issue(owner=$OWNER, repo=$REPO, issueNumber=$N)`. Returns `{number, title, state, body, labels, assignees, milestone, url, ...}`.
 - **CLI path** (`$GH_BACKEND = "CLI"`): `$GH issue view $N --json number,title,state,body,labels,assignees,milestone,url`. Same fields.
 - Read `state` ∈ `{"OPEN", "CLOSED"}` (binary; no nuance). Read `labels` (array of `{name, color, description}`).
-- Parse `$IN_PROGRESS_LABEL` from `.project-conf.toml`'s `[status_labels].in_progress` (snippet in `design/github-backend-primitives.md`). If missing, stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."`
+- Parse `$IN_PROGRESS_LABEL` from `.project-conf.toml`'s `[status_labels].in_progress` (snippet in `design/github-backend-primitives.md`). If missing, stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /slopstop:gh-init or add it manually."`
 - Check membership of `$IN_PROGRESS_LABEL` in `labels` — whether it's already present determines the Step 3 path.
 
 ### Step 3 — Transition to In Progress (if needed)
@@ -116,7 +116,7 @@ Three cases by *current state*, with system-specific mappings:
   - **MCP path:** call `${GH_MCP_NS}add_issue_labels(owner=$OWNER, repo=$REPO, issueNumber=$N, labels=[$IN_PROGRESS_LABEL])`.
   - **CLI path:** `$GH issue edit $N --add-label "$IN_PROGRESS_LABEL"`.
   - Github silently accepts adding a label already on the issue; no pre-check needed.
-  - If the label doesn't exist on the repo, the call fails — print the error and continue with seeding (the user can create the label manually or via `/ticket-gh-init`).
+  - If the label doesn't exist on the repo, the call fails — print the error and continue with seeding (the user can create the label manually or via `/slopstop:gh-init`).
 
 **c. Already done** — ask before reopening:
 - *JIRA:* `status.statusCategory.key === "done"`.

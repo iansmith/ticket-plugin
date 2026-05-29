@@ -91,7 +91,7 @@ Skills read `.project-conf.toml` from the current working directory. If absent:
 
 ```
 "No .project-conf.toml in cwd.
- Run /ticket-gh-init (for GitHub) or create the file manually."
+ Run /slopstop:gh-init (for GitHub) or create the file manually."
 ```
 
 …and stop. Skills do **not** auto-walk up the directory tree.

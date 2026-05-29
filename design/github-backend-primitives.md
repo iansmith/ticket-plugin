@@ -135,7 +135,7 @@ IN_REVIEW_LABEL=$(awk '
 ' .project-conf.toml)
 ```
 
-If `$IN_PROGRESS_LABEL` is empty (github project but no `[status_labels].in_progress`): stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /ticket-gh-init or add it manually."`
+If `$IN_PROGRESS_LABEL` is empty (github project but no `[status_labels].in_progress`): stop with `"system='github' requires [status_labels].in_progress in .project-conf.toml. Run /slopstop:gh-init or add it manually."`
 
 `$IN_REVIEW_LABEL` empty is fine — that's the signal for 3-state workflow (used by `:merge`).
 
@@ -240,7 +240,7 @@ EOF
 
 Github silently accepts adding a label that's already on the issue (idempotent by default). The skill doesn't need to pre-check.
 
-**Pre-condition:** `$LABEL` must already exist on the repo. The label `status:in-progress` is created by `/ticket-gh-init` (when implemented; see design/ticket-gh-init.md). For the bootstrap on slopstop itself, the label was created manually before BILL-8 started.
+**Pre-condition:** `$LABEL` must already exist on the repo. The label `status:in-progress` is created by `/slopstop:gh-init` (when implemented; see design/ticket-gh-init.md). For the bootstrap on slopstop itself, the label was created manually before BILL-8 started.
 
 ### Remove label
 
