@@ -29,6 +29,49 @@ def test_model_path_defaults_to_baked_in_container_path():
 
 
 # ---------------------------------------------------------------------------
+# max_length cap (BILL-37): the cross-encoder MUST be constructed with a
+# max_length, or scoring long ticket chunks is O(seq^2) — measured ~770s/~25GB
+# uncapped vs ~28s/~3.3GB at 512. Reranker.__init__ lazy-imports
+# `from sentence_transformers import CrossEncoder`, so we inject a fake
+# sentence_transformers module into sys.modules and capture the kwargs.
+# ---------------------------------------------------------------------------
+
+
+def _capture_crossencoder_kwargs(monkeypatch):
+    """Install a fake `sentence_transformers.CrossEncoder` and return a dict
+    that records the kwargs it was constructed with."""
+    import sys
+    import types
+
+    captured: dict = {}
+
+    class _FakeCrossEncoder:
+        def __init__(self, model_path, **kwargs):
+            captured["model_path"] = model_path
+            captured["kwargs"] = kwargs
+
+    fake_mod = types.ModuleType("sentence_transformers")
+    fake_mod.CrossEncoder = _FakeCrossEncoder
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_mod)
+    return captured
+
+
+def test_reranker_caps_max_length_by_default(monkeypatch):
+    from rag_service.rerank import MAX_LENGTH
+
+    captured = _capture_crossencoder_kwargs(monkeypatch)
+    Reranker(model_path="/fake/path")
+    assert MAX_LENGTH == 512
+    assert captured["kwargs"].get("max_length") == 512
+
+
+def test_reranker_max_length_override(monkeypatch):
+    captured = _capture_crossencoder_kwargs(monkeypatch)
+    Reranker(model_path="/fake/path", max_length=128)
+    assert captured["kwargs"].get("max_length") == 128
+
+
+# ---------------------------------------------------------------------------
 # Empty-passages short-circuit
 # ---------------------------------------------------------------------------
 
