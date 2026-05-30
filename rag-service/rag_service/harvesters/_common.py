@@ -335,11 +335,6 @@ COMMENT_SEQ_BASE = 0x1000  # 4096
 MAX_DESCRIPTION_TOKENS = 4096
 _CHARS_PER_TOKEN = 4
 
-# When a description is split, consecutive chunks share this many trailing
-# units (paragraphs / code blocks) so a thought spanning a boundary isn't lost
-# — the design's "with overlap" for oversized descriptions.
-_DESCRIPTION_OVERLAP_UNITS = 1
-
 # Paragraph separator: one or more blank lines (allowing trailing whitespace).
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n[ \t]*\n+")
 
@@ -372,13 +367,14 @@ def _split_into_units(text: str) -> list[str]:
     return units
 
 
-def _pack_units(units: list[str], max_tokens: int, overlap: int) -> list[str]:
+def _pack_units(units: list[str], max_tokens: int) -> list[str]:
     """Greedily pack atomic units into chunks of at most `max_tokens` tokens.
 
     A single unit larger than the budget becomes its own (oversized) chunk
     rather than being split — never split mid-thought (design §Chunking); the
-    encoder truncates if it still overshoots. `overlap` trailing units carry
-    into the next chunk so cross-boundary context isn't lost.
+    encoder truncates if it still overshoots. No overlap between chunks:
+    recent practice showed chunk overlap doesn't improve retrieval here and
+    only inflates the index, so each unit lands in exactly one chunk.
     """
     chunks: list[list[str]] = []
     current: list[str] = []
@@ -388,8 +384,8 @@ def _pack_units(units: list[str], max_tokens: int, overlap: int) -> list[str]:
         unit_tokens = _estimate_tokens(unit)
         if current and current_tokens + unit_tokens > max_tokens:
             chunks.append(current)
-            current = current[-overlap:] if overlap else []
-            current_tokens = sum(_estimate_tokens(u) for u in current)
+            current = []
+            current_tokens = 0
         current.append(unit)
         current_tokens += unit_tokens
 
@@ -421,7 +417,7 @@ def chunk_ticket(ticket: HarvestedTicket, *, provenance: str = "upstream") -> li
     Design §Chunking:
       - Description -> one chunk (kind='description', seq=0). If it exceeds
         ~MAX_DESCRIPTION_TOKENS it is split on paragraph boundaries (code
-        blocks kept intact) into seq=0,1,2,... with single-unit overlap. The
+        blocks kept intact) into seq=0,1,2,... with NO overlap. The
         description band runs 0..COMMENT_SEQ_BASE-1.
       - Each comment -> one chunk (kind='comment', seq=COMMENT_SEQ_BASE+i).
         Never split mid-thought — a comment is one logical unit even when long.
@@ -445,7 +441,6 @@ def chunk_ticket(ticket: HarvestedTicket, *, provenance: str = "upstream") -> li
         desc_pieces = _pack_units(
             _split_into_units(desc_raw),
             max_tokens=MAX_DESCRIPTION_TOKENS,
-            overlap=_DESCRIPTION_OVERLAP_UNITS,
         )
 
     if len(desc_pieces) > COMMENT_SEQ_BASE:

@@ -254,16 +254,16 @@ def test_oversized_description_keeps_comments_in_band():
     assert n_desc > 1
 
 
-def test_oversized_description_has_overlap_between_chunks():
+def test_oversized_description_chunks_are_disjoint():
+    # No overlap (recent practice showed chunk overlap doesn't help retrieval
+    # here): each paragraph lands in exactly one chunk, so adjacent chunks must
+    # NOT share paragraphs.
     rows = [r for r in chunk_ticket(_ticket(description=_huge_description(), comments=[]))
             if r.kind == "description"]
-    # Single-unit overlap: the start of chunk i+1 should re-include the last
-    # paragraph of chunk i, so consecutive chunks share some text.
-    shared = [
-        bool(set(rows[i].text.split("\n\n")) & set(rows[i + 1].text.split("\n\n")))
-        for i in range(len(rows) - 1)
-    ]
-    assert all(shared)
+    for i in range(len(rows) - 1):
+        a = {p for p in rows[i].text.split("\n\n") if p.strip()}
+        b = {p for p in rows[i + 1].text.split("\n\n") if p.strip()}
+        assert not (a & b), f"chunks {i} and {i + 1} share paragraphs (overlap leaked)"
 
 
 # ---------------------------------------------------------------------------
