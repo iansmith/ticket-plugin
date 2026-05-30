@@ -12,10 +12,14 @@ cosine distance — that's what makes Stage 1 fast. The reranker is a
 cross-encoder: it looks at the query and the candidate's text TOGETHER as
 one transformer input and produces a relevance score. That joint attention
 gives qualitatively better ranking than vector-only comparison, but it's
-slow — ~100 ms per pair on CPU. Stage 1 narrows the candidate set to ~100
-before this stage runs; even so, a full rerank against 100 pairs takes
-~10 s. Worth it because the precision improvement at the top of the result
-list is large.
+slow and its cost grows with input length: a cross-encoder runs full
+self-attention over the concatenated (query, passage) pair, so cost is
+O(seq^2). Input length is therefore capped via `MAX_LENGTH` (see below) —
+without that cap, scoring long ticket chunks is catastrophic (BILL-37
+measured ~770 s / ~25 GB for 35 uncapped candidates vs ~28 s / ~3.3 GB at
+max_length=512). Stage 1 narrows the candidate set to db.STAGE1_TOP_K before
+this stage runs. Worth it because the precision improvement at the top of the
+result list is large.
 
 # Lazy loading
 
@@ -34,6 +38,17 @@ import os
 _DEFAULT_MODEL_PATH = "/models/bge-reranker-v2-m3"
 MODEL_PATH: str = os.environ.get("RAG_SERVICE_BGE_RERANKER_PATH", _DEFAULT_MODEL_PATH)
 
+# Max input length (tokens) the cross-encoder considers per (query, passage)
+# pair. CRITICAL for performance: a cross-encoder runs full self-attention over
+# the concatenated pair, which is O(seq^2) in time AND memory. Without a cap,
+# scoring real ticket chunks (measured up to ~16k chars / thousands of tokens)
+# took ~770 s and peaked ~25 GB for 35 candidates — blowing past request
+# timeouts and the container memory budget. Capping at 512 tokens drops the same
+# workload to ~28 s / ~3.3 GB (measured, BILL-37 dogfood) with negligible
+# ranking-quality loss: chunks are already split by logical unit, and the
+# salient head of a chunk dominates relevance. Override via env for tuning.
+MAX_LENGTH: int = int(os.environ.get("RAG_SERVICE_RERANKER_MAX_LENGTH", "512"))
+
 
 class Reranker:
     """Wraps a sentence-transformers CrossEncoder loaded from a local path.
@@ -43,11 +58,14 @@ class Reranker:
     `design/rag-service-testing.md`.
     """
 
-    def __init__(self, model_path: str = MODEL_PATH) -> None:
+    def __init__(
+        self, model_path: str = MODEL_PATH, max_length: int = MAX_LENGTH
+    ) -> None:
         # Lazy import — see embed.py's same pattern + rationale.
         from sentence_transformers import CrossEncoder
 
-        self._model = CrossEncoder(model_path)
+        # max_length caps the O(seq^2) cross-encoder cost — see MAX_LENGTH above.
+        self._model = CrossEncoder(model_path, max_length=max_length)
 
     def score(self, query: str, passages: list[str]) -> list[float]:
         """Score each passage's relevance to the query.
