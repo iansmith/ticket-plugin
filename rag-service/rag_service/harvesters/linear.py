@@ -52,6 +52,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Callable, Protocol
 
 from rag_service.harvesters._common import (
+    _DEFAULT_TOKEN_COUNTER,
     ComplexityBudget,
     HarvestedComment,
     HarvestedTicket,
@@ -414,9 +415,16 @@ def _ingest(
     *,
     conn: psycopg.Connection,
     embedder: Embedder,
+    token_counter: Callable[[str], int] = _DEFAULT_TOKEN_COUNTER,
 ) -> int:
-    """Chunk → embed → full-resync write for one ticket. Returns rows written."""
-    rows = chunk_ticket(ticket)
+    """Chunk → embed → full-resync write for one ticket. Returns rows written.
+
+    `token_counter` is threaded into `chunk_ticket` so the chunker sizes against
+    the reranker's real tokenizer in production (the default) while Layer-1 tests
+    inject a weightless fake — no model weights load in pytest
+    (`design/rag-service-testing.md`).
+    """
+    rows = chunk_ticket(ticket, token_counter=token_counter)
     embed_rows(rows, embedder)
     return write_ticket(
         conn, rows, source=ticket.source, ticket_id=ticket.ticket_id
@@ -429,6 +437,7 @@ def sync_ticket(
     client: LinearClient,
     conn: psycopg.Connection,
     embedder: Embedder,
+    token_counter: Callable[[str], int] = _DEFAULT_TOKEN_COUNTER,
 ) -> int:
     """Full re-fetch + replace for one Linear ticket. Returns rows written.
 
@@ -440,7 +449,7 @@ def sync_ticket(
     ticket = client.fetch_ticket(identifier)
     if ticket is None:
         return 0
-    return _ingest(ticket, conn=conn, embedder=embedder)
+    return _ingest(ticket, conn=conn, embedder=embedder, token_counter=token_counter)
 
 
 def sync_recent(
@@ -449,6 +458,7 @@ def sync_recent(
     client: LinearClient,
     conn: psycopg.Connection,
     embedder: Embedder,
+    token_counter: Callable[[str], int] = _DEFAULT_TOKEN_COUNTER,
 ) -> int:
     """Batch catch-up: re-index every ticket updated at/after `since`.
 
@@ -459,7 +469,9 @@ def sync_recent(
     """
     total = 0
     for ticket in client.fetch_recent(since):
-        total += _ingest(ticket, conn=conn, embedder=embedder)
+        total += _ingest(
+            ticket, conn=conn, embedder=embedder, token_counter=token_counter
+        )
     return total
 
 

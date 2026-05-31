@@ -119,7 +119,7 @@ CREATE INDEX ticket_chunks_ticket_refs_idx
 
 ### Schema notes
 
-- One row per logical chunk. Description = one row. Each comment = one row. Each `## Heading` section of a local `findings.md` = one row.
+- One row per chunk. A description, comment, or `findings.md` section is split into heading-anchored ≤512-token chunks (see §Chunking strategy) — typically one row, but a long unit fans out into several rows, each prefixed with its heading.
 - `ticket_id` is system-qualified — no collisions across backends.
 - `provenance` separates the two ingestion paths. Upstream re-syncs never touch local rows; local file changes never touch upstream rows.
 - The `UNIQUE` constraint enables safe full re-sync per ticket: `DELETE WHERE (source, ticket_id, provenance) = (?, ?, 'upstream'); INSERT ...`.
@@ -264,7 +264,7 @@ POST /local/sync
 
 The RAG parses, splits on `## Heading` sections, and atomically replaces all `provenance='local'` rows for that ticket. The skill provides the content; the RAG handles parsing + embedding + storage.
 
-- One chunk per `## Heading` section. After the planned `:pause` / `:update` restructure (separate spec), `findings.md` is the durable home for substantive prose with content-titled sections — this granularity is natural.
+- Heading-anchored chunking per `## Heading` section (§Chunking strategy): one chunk per section, with a section over 512 tokens split into several heading-prefixed pieces. After the planned `:pause` / `:update` restructure (separate spec), `findings.md` is the durable home for substantive prose with content-titled sections — this granularity is natural.
 - The RAG never reads the local filesystem. No path resolution, no permissions handling, no watcher daemon, no race conditions between skill writes and async readers.
 - `progress.md` is never pushed — operational diary, never durable. `:document` already excludes it from upstream push; the local-push path mirrors the same policy.
 - Tracking files (`CURRENT-*`) are never pushed — pure state, no prose.
@@ -275,13 +275,16 @@ The `provenance = 'local'` channel is expected to carry near-zero volume once th
 
 ## Chunking strategy
 
-Default: **one chunk per logical unit, never split mid-thought**:
+**Heading-anchored, 512-token chunking** (BILL-43). A single shared chunker (`chunk_text` in `harvesters/_common.py`) serves descriptions, comments, and `findings.md` alike:
 
-- Description → one chunk (split on paragraph boundaries with overlap only if > 4K tokens).
-- Each upstream comment → one chunk.
-- Each `## Heading` in local `findings.md` → one chunk.
+- **Walk `##`/`###` sections.** Each heading section is the base logical unit; text before the first heading (or a body with no headings — the common case for descriptions and comments) is one preamble section.
+- **Every chunk is prefixed with its section heading**, so a sub-split fragment still carries "what is this about." A description leads its first chunk with the ticket title.
+- **Hard cap of 512 tokens per chunk**, counted with the reranker's **real tokenizer** (`bge-reranker-v2-m3`), not a `chars/4` estimate. A section over the cap is split on paragraph then word boundaries — code fences are never split mid-block — with the heading re-prefixed onto every piece. **No overlap** between pieces.
+- Description chunks occupy seq `0..`; comment chunks occupy a disjoint band from `COMMENT_SEQ_BASE`, with one running counter across all of a ticket's comment sub-chunks.
 
-Fixed-token chunking is rejected. Ticket comments are arguments; splitting an argument across chunks dilutes the signal. A 200-line comment is still one logical unit because the conclusion at the end depends on the setup at the beginning.
+**Why 512 tokens (the real tokenizer, not `chars/4`).** 512 is the reranker's `max_length`: at or under it the cross-encoder scores the chunk *in full* with no truncation, and bge-m3's averaged vector stays sharp. Measured ticket text runs ~2.5 chars/token, so a `chars/4` estimate under-counts by ~1.6× — a chunk that looks like 512 "tokens" by the estimate can really be ~800 and get silently truncated at score time, defeating the cap. Harvest is offline/cron, so per-chunk tokenization with the in-image tokenizer is affordable. The tokenizer is injected (`token_counter`) so unit tests stay weightless; production uses the reranker's own tokenizer, the single source of truth for the model path.
+
+**Comments are now split (reversal of the original rule).** This supersedes the earlier "each upstream comment → one chunk; a 200-line comment is one logical unit, never split." Measured during the BILL-37 dogfood, 98.6% of chunks exceeded 512 tokens, so the reranker saw only ~17% of a typical chunk — the dominant retrieval problem. Under the 512 cap a long comment now fans out into multiple heading-prefixed chunks. The mitigation for the lost "whole-argument" context is precisely the heading/title prefix carried on every piece. Fixed-*size* blind chunking is still rejected; the split is heading-anchored and prefix-preserving, not a naive sliding window.
 
 ### Code blocks: signal, not text
 

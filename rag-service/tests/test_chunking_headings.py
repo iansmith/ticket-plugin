@@ -118,7 +118,10 @@ def test_chunk_ticket_accepts_injected_token_counter():
 
 
 def test_chunk_ticket_splits_a_long_comment():
-    long_body = " ".join(f"c{i}" for i in range(80))
+    # The comment must genuinely exceed the cap (counted by _word_counter) for
+    # the split to fire — size it off MAX_CHUNK_TOKENS so it can't silently fall
+    # under the cap if that constant changes.
+    long_body = " ".join(f"c{i}" for i in range(_common.MAX_CHUNK_TOKENS + 50))
     rows = _common.chunk_ticket(
         _ticket(comments=[HarvestedComment(body=long_body)]),
         token_counter=_word_counter,
@@ -130,7 +133,10 @@ def test_chunk_ticket_splits_a_long_comment():
 
 
 def test_chunk_ticket_comment_subchunks_use_contiguous_seq_band():
-    long_body = " ".join(f"c{i}" for i in range(80))
+    # First comment exceeds the cap (so it fans into >1 sub-chunk), proving the
+    # running seq counter stays contiguous ACROSS a split comment's pieces — not
+    # just across whole comments.
+    long_body = " ".join(f"c{i}" for i in range(_common.MAX_CHUNK_TOKENS + 50))
     rows = _common.chunk_ticket(
         _ticket(comments=[HarvestedComment(body=long_body), HarvestedComment(body="tail")]),
         token_counter=_word_counter,

@@ -52,6 +52,14 @@ from rag_service.harvesters.linear import (
 # ---------------------------------------------------------------------------
 
 
+# Weightless stand-in for the reranker tokenizer (whitespace-word count), injected
+# into the sync path so chunk_ticket never loads real model weights in pytest
+# (`design/rag-service-testing.md`). The test tickets are tiny, so every chunk
+# stays well under the cap — desc and comment each produce a single chunk.
+def _word_counter(text: str) -> int:
+    return len(text.split())
+
+
 class _FakeEmbedder:
     def encode_passage(self, text: str) -> np.ndarray:
         return np.full(1024, float(len(text) % 7), dtype=np.float32)
@@ -218,7 +226,10 @@ def _ticket(identifier="LOU-102", **kw) -> HarvestedTicket:
 def test_sync_ticket_writes_chunks_for_found_ticket():
     client = FakeLinearClient(tickets={"LOU-102": _ticket()})
     conn = _RecordingConn()
-    n = sync_ticket("LOU-102", client=client, conn=conn, embedder=_FakeEmbedder())
+    n = sync_ticket(
+        "LOU-102", client=client, conn=conn, embedder=_FakeEmbedder(),
+        token_counter=_word_counter,
+    )
     assert n == 2  # description + one comment
     assert client.fetch_ticket_calls == ["LOU-102"]
     assert len(conn.inserts) == 2
@@ -238,7 +249,10 @@ def test_sync_ticket_missing_ticket_is_noop():
 def test_sync_ticket_embeds_every_row():
     client = FakeLinearClient(tickets={"LOU-102": _ticket()})
     conn = _RecordingConn()
-    sync_ticket("LOU-102", client=client, conn=conn, embedder=_FakeEmbedder())
+    sync_ticket(
+        "LOU-102", client=client, conn=conn, embedder=_FakeEmbedder(),
+        token_counter=_word_counter,
+    )
     # write_ticket binds embedding as a 1024-element list; find it in each
     # INSERT param tuple.
     for params in conn.inserts:
@@ -250,7 +264,10 @@ def test_sync_ticket_assigns_seq_bands():
     # Description seq 0; the comment lands in the comment band (0x1000).
     client = FakeLinearClient(tickets={"LOU-102": _ticket()})
     conn = _RecordingConn()
-    sync_ticket("LOU-102", client=client, conn=conn, embedder=_FakeEmbedder())
+    sync_ticket(
+        "LOU-102", client=client, conn=conn, embedder=_FakeEmbedder(),
+        token_counter=_word_counter,
+    )
     # seq is the 5th INSERT column (source,ticket_id,provenance,kind,seq,...).
     seqs = sorted(params[4] for params in conn.inserts)
     assert seqs == [0, COMMENT_SEQ_BASE]
@@ -266,7 +283,10 @@ def test_sync_recent_ingests_all_tickets():
     client = FakeLinearClient(recent=recent)
     conn = _RecordingConn()
     since = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    n = sync_recent(since, client=client, conn=conn, embedder=_FakeEmbedder())
+    n = sync_recent(
+        since, client=client, conn=conn, embedder=_FakeEmbedder(),
+        token_counter=_word_counter,
+    )
     assert n == 10  # 5 tickets x (1 description + 1 comment)
     assert len(conn.deletes) == 5  # one full-resync DELETE per ticket
 
@@ -280,6 +300,7 @@ def test_sync_recent_ingests_large_corpus():
         client=client,
         conn=conn,
         embedder=_FakeEmbedder(),
+        token_counter=_word_counter,
     )
     assert len(conn.inserts) == 240  # 120 tickets x (description + comment)
     assert len(conn.deletes) == 120  # one full-resync DELETE per ticket

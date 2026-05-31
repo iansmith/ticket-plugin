@@ -15,7 +15,7 @@ import pytest
 
 from rag_service.harvesters._common import (
     COMMENT_SEQ_BASE,
-    MAX_DESCRIPTION_TOKENS,
+    MAX_CHUNK_TOKENS,
     ChunkRow,
     HarvestedComment,
     HarvestedTicket,
@@ -165,8 +165,20 @@ def _ticket(**kw) -> HarvestedTicket:
     return HarvestedTicket(**base)
 
 
+# Weightless stand-in for the reranker tokenizer (whitespace-word count). Every
+# chunk_ticket call here injects it, so no real tokenizer / model weights load in
+# pytest (`design/rag-service-testing.md`). Token budgets in these tests are
+# therefore expressed in WORDS against MAX_CHUNK_TOKENS.
+def _word_counter(text: str) -> int:
+    return len(text.split())
+
+
+def _chunk(ticket: HarvestedTicket):
+    return chunk_ticket(ticket, token_counter=_word_counter)
+
+
 def test_chunk_ticket_description_is_seq0_and_includes_title():
-    rows = chunk_ticket(_ticket(comments=[]))
+    rows = _chunk(_ticket(comments=[]))
     assert len(rows) == 1
     desc = rows[0]
     assert desc.kind == "description"
@@ -176,7 +188,7 @@ def test_chunk_ticket_description_is_seq0_and_includes_title():
 
 
 def test_chunk_ticket_comments_use_seq_band():
-    rows = chunk_ticket(
+    rows = _chunk(
         _ticket(
             comments=[
                 HarvestedComment(body="first", author="ian", upstream_id="c1"),
@@ -190,7 +202,7 @@ def test_chunk_ticket_comments_use_seq_band():
 
 
 def test_chunk_ticket_skips_empty_comments_without_seq_gap():
-    rows = chunk_ticket(
+    rows = _chunk(
         _ticket(
             comments=[
                 HarvestedComment(body="kept-1"),
@@ -206,7 +218,7 @@ def test_chunk_ticket_skips_empty_comments_without_seq_gap():
 
 
 def test_chunk_ticket_skips_empty_comments():
-    rows = chunk_ticket(_ticket(comments=[HarvestedComment(body="   ")]))
+    rows = _chunk(_ticket(comments=[HarvestedComment(body="   ")]))
     assert len(rows) == 1  # only the description
 
 
@@ -216,23 +228,24 @@ def test_chunk_ticket_skips_empty_comments():
 
 
 def _huge_description() -> str:
-    # Each paragraph ~ a few hundred chars; enough of them to blow past the
-    # MAX_DESCRIPTION_TOKENS budget (chars/4 estimate).
-    target_chars = (MAX_DESCRIPTION_TOKENS + 2000) * 4
-    para = (
-        "This is paragraph number {n}. " + ("lorem ipsum dolor sit amet " * 12)
-    )
-    paras, total, n = [], 0, 0
-    while total < target_chars:
+    # Enough distinct paragraphs to blow well past the MAX_CHUNK_TOKENS budget
+    # (counted in words by _word_counter) so the description splits into several
+    # heading-anchored pieces. Each paragraph stays comfortably under the cap so
+    # it survives as a WHOLE unit — the disjoint test compares paragraph sets
+    # across adjacent chunks, which only holds if paragraphs aren't word-split.
+    target_words = MAX_CHUNK_TOKENS * 3
+    para = "This is distinct paragraph number {n}. " + ("lorem ipsum dolor sit amet " * 7)
+    paras, words, n = [], 0, 0
+    while words < target_words:
         p = para.format(n=n)
         paras.append(p)
-        total += len(p) + 2
+        words += len(p.split())
         n += 1
     return "\n\n".join(paras)
 
 
 def test_chunk_ticket_splits_oversized_description():
-    rows = chunk_ticket(_ticket(description=_huge_description(), comments=[]))
+    rows = _chunk(_ticket(description=_huge_description(), comments=[]))
     desc_rows = [r for r in rows if r.kind == "description"]
     assert len(desc_rows) > 1  # actually split
     # Contiguous seqs starting at 0, all inside the description band.
@@ -241,7 +254,7 @@ def test_chunk_ticket_splits_oversized_description():
 
 
 def test_oversized_description_keeps_comments_in_band():
-    rows = chunk_ticket(
+    rows = _chunk(
         _ticket(
             description=_huge_description(),
             comments=[HarvestedComment(body="a real comment")],
@@ -258,7 +271,7 @@ def test_oversized_description_chunks_are_disjoint():
     # No overlap (recent practice showed chunk overlap doesn't help retrieval
     # here): each paragraph lands in exactly one chunk, so adjacent chunks must
     # NOT share paragraphs.
-    rows = [r for r in chunk_ticket(_ticket(description=_huge_description(), comments=[]))
+    rows = [r for r in _chunk(_ticket(description=_huge_description(), comments=[]))
             if r.kind == "description"]
     for i in range(len(rows) - 1):
         a = {p for p in rows[i].text.split("\n\n") if p.strip()}
@@ -328,13 +341,13 @@ def test_oversized_description_never_splits_a_code_fence():
     # A fenced block embedded in a huge description must survive intact in
     # exactly one chunk — extracted as a code_ref, never cut in half.
     body = _huge_description() + "\n\n```go\nfunc criticalFn() {}\n```"
-    rows = chunk_ticket(_ticket(description=body, comments=[]))
+    rows = _chunk(_ticket(description=body, comments=[]))
     fn_rows = [r for r in rows if any(c.get("func") == "criticalFn" for c in r.code_refs)]
     assert len(fn_rows) >= 1  # the fence landed in (at least) one chunk's refs
 
 
 def test_chunk_ticket_strips_code_and_records_refs():
-    rows = chunk_ticket(
+    rows = _chunk(
         _ticket(
             description="root cause below\n```go\nfunc runqGet() {}\n```\nsee MAZ-9",
             comments=[],
@@ -348,7 +361,7 @@ def test_chunk_ticket_strips_code_and_records_refs():
 
 
 def test_chunk_ticket_propagates_source_and_ticket_id():
-    rows = chunk_ticket(_ticket(source="linear", ticket_id="LOU-102", comments=[]))
+    rows = _chunk(_ticket(source="linear", ticket_id="LOU-102", comments=[]))
     assert all(r.source == "linear" and r.ticket_id == "LOU-102" for r in rows)
     assert all(r.provenance == "upstream" for r in rows)
 
@@ -367,7 +380,7 @@ class _FakeEmbedder:
 
 
 def test_embed_rows_fills_embedding_as_plain_list():
-    rows = chunk_ticket(_ticket(comments=[HarvestedComment(body="hello")]))
+    rows = _chunk(_ticket(comments=[HarvestedComment(body="hello")]))
     out = embed_rows(rows, _FakeEmbedder())
     assert out is rows  # mutates in place
     for r in rows:

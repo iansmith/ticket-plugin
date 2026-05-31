@@ -318,8 +318,8 @@ def extract_ticket_refs(text: str) -> list[str]:
 # seq spaces must not collide. We carve seq into two bands:
 #
 #   - Description chunks: seq 0 .. COMMENT_SEQ_BASE-1 (0x000..0xFFF).
-#     Normally just seq=0; an oversized description (design §Chunking: split on
-#     paragraph boundaries if > ~4K tokens) fans out into seq=0,1,2,...
+#     Normally just seq=0; a description split into heading-anchored 512-token
+#     sections (design §Chunking) fans out into seq=0,1,2,...
 #   - Comments: seq COMMENT_SEQ_BASE + i (0x1000, 0x1001, ...).
 #
 # A 4096-slot description band is absurdly generous — no real ticket
@@ -327,23 +327,42 @@ def extract_ticket_refs(text: str) -> list[str]:
 # the two kinds' seq spaces provably disjoint without a second column.
 COMMENT_SEQ_BASE = 0x1000  # 4096
 
-# Token budget for a single description chunk before it must be split. Matches
-# the design's "~4K tokens" guidance. We don't load the model tokenizer just to
-# make a chunking decision (it's lazy-imported and heavy); a chars/token
-# estimate is plenty for a coarse split threshold — the encoder truncates
-# anything that still overshoots.
-MAX_DESCRIPTION_TOKENS = 4096
-_CHARS_PER_TOKEN = 4
+# Hard token cap for EVERY chunk — description, comment, or finding (BILL-43).
+# 512 is the reranker's `max_length` (rerank.py); a chunk at or under it is the
+# only setting where the cross-encoder scores the chunk IN FULL with no
+# truncation, and where bge-m3's averaged vector stays sharp. The cap is
+# enforced with the reranker's REAL tokenizer (not chars/4), because measured
+# ticket text runs ~2.5 chars/token — chars/4 under-counts ~1.6×, so a chunk
+# that looks like 512 "tokens" by the estimate can really be ~800 and get
+# truncated, defeating the whole point. See `design/ticket-rag.md` §Chunking.
+MAX_CHUNK_TOKENS = 512
+
+# Markdown section headings we anchor chunks on: `##` or `###` (h2/h3). h1 is
+# rare in ticket bodies and usually the title (already folded in elsewhere).
+_HEADING_RE = re.compile(r"^(#{2,3})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
 # Paragraph separator: one or more blank lines (allowing trailing whitespace).
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n[ \t]*\n+")
 
 
-def _estimate_tokens(text: str) -> int:
-    """Coarse token-count estimate (chars / _CHARS_PER_TOKEN), for chunk-size
-    decisions only. Deliberately not the real tokenizer — see
-    MAX_DESCRIPTION_TOKENS rationale."""
-    return len(text) // _CHARS_PER_TOKEN
+def _real_token_counter(text: str) -> int:
+    """Exact token count using the reranker's own tokenizer (BILL-43).
+
+    The production default for `chunk_text`: sizing chunks against the SAME
+    tokenizer the reranker scores with is what guarantees no chunk is ever
+    truncated by the reranker's `max_length` window. Special tokens are excluded
+    — we count the chunk's own content tokens, not the (query, passage) framing
+    the reranker adds at score time. Lazy: the tokenizer loads only in the
+    harvest process, never at import or in pytest (tests inject a fake counter).
+    """
+    from rag_service.rerank import get_reranker_tokenizer
+
+    return len(get_reranker_tokenizer().encode(text, add_special_tokens=False))
+
+
+# Module default counter for the heading-aware chunker. Injected as a kwarg so
+# tests pass a weightless fake; production uses the real reranker tokenizer.
+_DEFAULT_TOKEN_COUNTER: Callable[[str], int] = _real_token_counter
 
 
 def _split_into_units(text: str) -> list[str]:
@@ -367,21 +386,67 @@ def _split_into_units(text: str) -> list[str]:
     return units
 
 
-def _pack_units(units: list[str], max_tokens: int) -> list[str]:
+def _is_code_fence(unit: str) -> bool:
+    """True if `unit` is a whole fenced code block (``` or ~~~ opener).
+
+    Fences are NEVER word-split — cutting a diff or code listing in half is
+    exactly the failure the unit-splitter exists to avoid. An oversized fence
+    stays one chunk and the encoder truncates it; a half-fence is worse.
+    """
+    return unit.lstrip().startswith(("```", "~~~"))
+
+
+def _split_oversized_unit(
+    unit: str, max_tokens: int, token_counter: Callable[[str], int]
+) -> list[str]:
+    """Split a single prose unit that alone exceeds `max_tokens` on word
+    boundaries into pieces that each fit the budget.
+
+    Most ticket bodies are one long unsectioned paragraph, so paragraph-level
+    splitting isn't fine enough to honor a hard 512-token cap — a single
+    paragraph can blow the budget by itself. Code fences are returned whole
+    (see `_is_code_fence`); a unit already within budget is returned unchanged.
+    """
+    if _is_code_fence(unit) or token_counter(unit) <= max_tokens:
+        return [unit]
+    pieces: list[str] = []
+    current: list[str] = []
+    for word in unit.split():
+        if current and token_counter(" ".join([*current, word])) > max_tokens:
+            pieces.append(" ".join(current))
+            current = [word]
+        else:
+            current.append(word)
+    if current:
+        pieces.append(" ".join(current))
+    return pieces
+
+
+def _pack_units(
+    units: list[str],
+    max_tokens: int,
+    token_counter: Callable[[str], int],
+) -> list[str]:
     """Greedily pack atomic units into chunks of at most `max_tokens` tokens.
 
-    A single unit larger than the budget becomes its own (oversized) chunk
-    rather than being split — never split mid-thought (design §Chunking); the
-    encoder truncates if it still overshoots. No overlap between chunks:
-    recent practice showed chunk overlap doesn't improve retrieval here and
-    only inflates the index, so each unit lands in exactly one chunk.
+    A prose unit larger than the budget is first split on word boundaries
+    (`_split_oversized_unit`) so the hard cap is honored; a code fence that
+    overshoots stays whole (never split mid-fence — design §Chunking). No
+    overlap between chunks: recent practice showed chunk overlap doesn't improve
+    retrieval here and only inflates the index, so each unit lands in exactly
+    one chunk. `token_counter` is injected (the reranker's real tokenizer in
+    production, a weightless fake in tests) — there is no chars/4 fallback.
     """
+    expanded: list[str] = []
+    for unit in units:
+        expanded.extend(_split_oversized_unit(unit, max_tokens, token_counter))
+
     chunks: list[list[str]] = []
     current: list[str] = []
     current_tokens = 0
 
-    for unit in units:
-        unit_tokens = _estimate_tokens(unit)
+    for unit in expanded:
+        unit_tokens = token_counter(unit)
         if current and current_tokens + unit_tokens > max_tokens:
             chunks.append(current)
             current = []
@@ -392,6 +457,71 @@ def _pack_units(units: list[str], max_tokens: int) -> list[str]:
     if current:
         chunks.append(current)
     return ["\n\n".join(c) for c in chunks]
+
+
+def _split_into_sections(text: str) -> list[tuple[str | None, str]]:
+    """Split `text` into `(heading, body)` sections on `##`/`###` headings.
+
+    The heading is the full markdown heading line (e.g. `## Context`), kept so
+    it can be re-prefixed onto every chunk derived from the section. Text before
+    the first heading — or all of `text` when there are no headings, the common
+    case for ticket descriptions and comments — is one section with heading
+    `None`. Empty bodies are preserved as `(heading, "")` so a bare heading
+    still produces a chunk; an all-blank input yields no sections.
+    """
+    matches = list(_HEADING_RE.finditer(text))
+    if not matches:
+        stripped = text.strip()
+        return [(None, stripped)] if stripped else []
+
+    sections: list[tuple[str | None, str]] = []
+    preamble = text[: matches[0].start()].strip()
+    if preamble:
+        sections.append((None, preamble))
+    for i, m in enumerate(matches):
+        heading = m.group(0).strip()
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[m.end() : body_end].strip()
+        sections.append((heading, body))
+    return sections
+
+
+def chunk_text(
+    text: str,
+    *,
+    token_counter: Callable[[str], int] = _DEFAULT_TOKEN_COUNTER,
+    max_tokens: int = MAX_CHUNK_TOKENS,
+) -> list[str]:
+    """Heading-anchored, token-budgeted splitter shared by descriptions,
+    comments, and findings (BILL-43; design §Chunking).
+
+    Walks `##`/`###` sections; each section is the base logical unit. Every
+    chunk is PREFIXED with its section heading so a sub-split fragment still
+    carries "what is this about". A section over `max_tokens` is split on
+    paragraph then word boundaries (code fences kept intact), each piece
+    re-prefixed with the heading, NO overlap. The heading's own tokens count
+    against the budget, so the body is packed against `max_tokens` minus the
+    prefix cost — the final prefixed chunk stays within the cap.
+
+    `token_counter` is injected: the reranker's real tokenizer in production
+    (the only count that guarantees no reranker truncation), a weightless fake
+    in tests. Returns the list of chunk strings in document order.
+    """
+    chunks: list[str] = []
+    for heading, body in _split_into_sections(text):
+        prefix = f"{heading}\n\n" if heading else ""
+        if not body:
+            if heading:
+                chunks.append(heading)
+            continue
+        combined = f"{prefix}{body}"
+        if token_counter(combined) <= max_tokens:
+            chunks.append(combined)
+            continue
+        body_budget = max(1, max_tokens - (token_counter(prefix) if prefix else 0))
+        for piece in _pack_units(_split_into_units(body), body_budget, token_counter):
+            chunks.append(f"{prefix}{piece}")
+    return chunks
 
 
 def _assemble_text(raw: str) -> tuple[str, list[dict], list[str]]:
@@ -411,23 +541,34 @@ def _assemble_text(raw: str) -> tuple[str, list[dict], list[str]]:
     return embed_text, code_refs, ticket_refs
 
 
-def chunk_ticket(ticket: HarvestedTicket, *, provenance: str = "upstream") -> list[ChunkRow]:
-    """Split a HarvestedTicket into ChunkRows, one per logical unit.
+def chunk_ticket(
+    ticket: HarvestedTicket,
+    *,
+    provenance: str = "upstream",
+    token_counter: Callable[[str], int] = _DEFAULT_TOKEN_COUNTER,
+) -> list[ChunkRow]:
+    """Split a HarvestedTicket into ChunkRows via the heading-aware chunker.
 
-    Design §Chunking:
-      - Description -> one chunk (kind='description', seq=0). If it exceeds
-        ~MAX_DESCRIPTION_TOKENS it is split on paragraph boundaries (code
-        blocks kept intact) into seq=0,1,2,... with NO overlap. The
-        description band runs 0..COMMENT_SEQ_BASE-1.
-      - Each comment -> one chunk (kind='comment', seq=COMMENT_SEQ_BASE+i).
-        Never split mid-thought — a comment is one logical unit even when long.
+    Both the description AND every comment run through `chunk_text` (BILL-43):
+    heading-anchored `##`/`###` sections, each chunk prefixed with its heading,
+    each ≤MAX_CHUNK_TOKENS real tokens, oversized sections split on paragraph
+    then word boundaries with NO overlap. `token_counter` is injected so the
+    production path counts with the reranker's real tokenizer (the only count
+    that guarantees no reranker truncation) while tests pass a weightless fake.
+
+      - Description -> kind='description', seq 0.. (band 0..COMMENT_SEQ_BASE-1).
+        The first chunk leads with `title` (short, high-signal — gives an
+        otherwise-terse description retrievable context); the title rides the
+        first section as preamble.
+      - Comments -> kind='comment', seq COMMENT_SEQ_BASE.. as ONE running
+        counter across ALL comments' sub-chunks. This is the BILL-43 reversal of
+        the old "each comment is one logical unit, never split" rule: a comment
+        over the token cap now fans out into multiple heading-prefixed chunks,
+        each carrying that comment's author/created_at/upstream_id.
 
     The two seq bands keep description and comment seqs provably disjoint under
     the schema's UNIQUE(source,ticket_id,provenance,kind,seq), without a second
     column (see COMMENT_SEQ_BASE).
-
-    The description's first chunk leads with `title` (short, high-signal —
-    gives an otherwise-terse description retrievable context).
     """
     rows: list[ChunkRow] = []
 
@@ -435,13 +576,7 @@ def chunk_ticket(ticket: HarvestedTicket, *, provenance: str = "upstream") -> li
     description = ticket.description.strip()
     desc_raw = f"{title}\n\n{description}" if description else title
 
-    if _estimate_tokens(desc_raw) <= MAX_DESCRIPTION_TOKENS:
-        desc_pieces = [desc_raw]
-    else:
-        desc_pieces = _pack_units(
-            _split_into_units(desc_raw),
-            max_tokens=MAX_DESCRIPTION_TOKENS,
-        )
+    desc_pieces = chunk_text(desc_raw, token_counter=token_counter)
 
     if len(desc_pieces) > COMMENT_SEQ_BASE:
         # Pathological: a description that splits into 4096+ pieces would spill
@@ -469,27 +604,33 @@ def chunk_ticket(ticket: HarvestedTicket, *, provenance: str = "upstream") -> li
             )
         )
 
+    # One running counter across ALL comments' sub-chunks, so the comment band
+    # is contiguous (COMMENT_SEQ_BASE, +1, +2, ...) no matter how many chunks
+    # each individual comment fans out into.
     comment_seq = COMMENT_SEQ_BASE
     for comment in ticket.comments:
         if not comment.body.strip():
             continue  # empty comment carries no signal; skip it
-        embed_text, code_refs, ticket_refs = _assemble_text(comment.body)
-        rows.append(
-            ChunkRow(
-                source=ticket.source,
-                ticket_id=ticket.ticket_id,
-                provenance=provenance,
-                kind="comment",
-                seq=comment_seq,
-                text=embed_text,
-                code_refs=code_refs,
-                ticket_refs=ticket_refs,
-                upstream_id=comment.upstream_id,
-                author=comment.author,
-                created_at=comment.created_at,
+        for piece in chunk_text(comment.body, token_counter=token_counter):
+            embed_text, code_refs, ticket_refs = _assemble_text(piece)
+            rows.append(
+                ChunkRow(
+                    source=ticket.source,
+                    ticket_id=ticket.ticket_id,
+                    provenance=provenance,
+                    kind="comment",
+                    seq=comment_seq,
+                    text=embed_text,
+                    code_refs=code_refs,
+                    ticket_refs=ticket_refs,
+                    # Comment-level metadata rides every sub-chunk of that
+                    # comment, so each piece is independently attributable.
+                    upstream_id=comment.upstream_id,
+                    author=comment.author,
+                    created_at=comment.created_at,
+                )
             )
-        )
-        comment_seq += 1
+            comment_seq += 1
 
     return rows
 

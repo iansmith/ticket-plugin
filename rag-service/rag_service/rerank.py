@@ -129,3 +129,30 @@ def get_reranker() -> Reranker:
     if _reranker is None:
         _reranker = Reranker()
     return _reranker
+
+
+# Process-wide tokenizer singleton, used by the harvester chunker (BILL-43) to
+# count tokens EXACTLY with the reranker's own tokenizer — the only counter that
+# guarantees a chunk fits the reranker's MAX_LENGTH window with no truncation.
+# None until the first get_reranker_tokenizer() call inside a running container.
+_reranker_tokenizer = None
+
+
+def get_reranker_tokenizer():
+    """Lazy process-wide AutoTokenizer for the reranker model.
+
+    Loads ONLY the tokenizer (no model weights), so it's cheap enough to call
+    per chunk during the offline/cron harvest. Lives here, not in the chunker,
+    so there is a single source of truth for the reranker's model path — the
+    chunker must size chunks against the SAME tokenizer the reranker scores with.
+
+    Lazy-imported like `Reranker.__init__`: tests never call this — the chunker
+    injects a fake whitespace-word counter (`design/rag-service-testing.md`), so
+    no tokenizer or model weights load in pytest.
+    """
+    global _reranker_tokenizer
+    if _reranker_tokenizer is None:
+        from transformers import AutoTokenizer
+
+        _reranker_tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+    return _reranker_tokenizer
