@@ -223,66 +223,82 @@ On comment-add failure: warn (`"Couldn't post the CodeRabbit trigger comment: <e
 
 Skip if `--no-poll` was passed.
 
-We're polling for **completion** — CodeRabbit having finished its review of this PR. That can take any of three observable forms:
+We're polling for **completion** — CodeRabbit having finished its review of **the current HEAD commit** of this PR. The word "current" is load-bearing: see the first-vs-incremental trap below.
 
-- **Inline review comments** at `repos/$OWNER/$REPO/pulls/$PR/comments` — line-level suggestions. Non-zero count means CodeRabbit flagged at least one item.
-- **Finalized review summaries** at `repos/$OWNER/$REPO/pulls/$PR/reviews` with `state ∈ {CHANGES_REQUESTED, APPROVED, COMMENTED}`. (Empirically, current CodeRabbit posts most or all reviews as `COMMENTED` — the state field isn't a reliable signal of intent, just an artifact of how CodeRabbit submits. Treat any review authored by `coderabbitai[bot]` as a completion signal, regardless of state. The earlier exclusion of `COMMENTED` caused PRs to time out at 15 min when CodeRabbit had actually finished — see `<!-- walkthrough_start -->` marker logic below as the cross-check.)
-- **A completed walkthrough comment** at `repos/$OWNER/$REPO/issues/$PR/comments` from `coderabbitai[bot]` whose body contains a CodeRabbit completion marker. The reliable markers, validated against current CodeRabbit output, are the HTML comment `<!-- walkthrough_start -->` and the section heading `## Walkthrough` — CodeRabbit inserts these only when the walkthrough body has been populated, not when the comment is still in its early "I'm reviewing this..." placeholder form. The legacy markers `"Summary by CodeRabbit"`, `"No actionable comments"`, and `"Actionable comments posted:"` are kept as fallbacks for older CodeRabbit versions, but the first two markers above match 100% of current walkthroughs. This is the **zero-findings path** — CodeRabbit ran, may have had nothing to flag (no Review object, no inline comments), but the walkthrough comment is the signal that it finished.
+> **First review vs. incremental re-review — the in-place-edit trap.** On the **first** review of a PR, CodeRabbit posts fresh artifacts: a Review object, maybe inline comments, and a new walkthrough issue-comment. On **every subsequent** review (i.e. after you push more commits — which is exactly what happens when `/slopstop:pr` re-runs after you applied earlier feedback, or when the user re-polls), CodeRabbit does **NOT** post a new walkthrough and usually does **NOT** post a new Review object or new inline comments. Instead it **edits the SAME walkthrough issue-comment in place** — bumping its `updated_at`, rewriting the `## Walkthrough` body, and updating its `📥 Commits … between <old-head> and <new-head>` line to the new HEAD sha. A clean incremental pass leaves the body as `"No actionable comments were generated in the recent review."` with no other artifact at all.
+>
+> **Consequence:** a poll that merely counts "does any `coderabbitai[bot]` review / inline comment / walkthrough exist?" is **correct only for the first review**. On a re-poll it matches the **stale prior-review artifacts on iteration 1** and returns instantly — reporting the OLD feedback as if it were the review of your new commit, before CodeRabbit has even started the incremental pass. The fix is to gate completion on artifacts that reference **`$HEAD_SHA`** (the current commit), not on mere existence.
+
+The reliable, version-stable completion signal that works for BOTH first and incremental reviews: **a `coderabbitai[bot]` walkthrough issue-comment whose body both carries a walkthrough marker AND references the current `$HEAD_SHA`.** Because the walkthrough is edited in place, its `📥 Commits … and <HEAD>` line names the current head once — and only once — CodeRabbit has reviewed that head. Walkthrough markers (validated against current output): `<!-- walkthrough_start -->` and `## Walkthrough` (100% of current walkthroughs); legacy fallbacks `Summary by CodeRabbit` / `No actionable comments` / `Actionable comments posted:` for older versions.
+
+Two secondary signals, both filtered to the current head: **inline review comments** at `…/pulls/$PR/comments` and **finalized reviews** at `…/pulls/$PR/reviews`, each with `commit_id == $HEAD_SHA`. (Treat any review by `coderabbitai[bot]` as valid regardless of `state` — current CodeRabbit posts most reviews as `COMMENTED`; the state isn't a reliable intent signal.) These determine whether there are FINDINGS on this head (Step 7-full) vs. a clean pass (Step 7-clean) — but the **walkthrough-references-HEAD** check is the primary completion gate, since a clean incremental pass produces neither a review nor inline comments.
 
 Prefer `gh api` for polling regardless of `$BACKEND` (it's simpler and read-only). If gh isn't installed and you're MCP-only, use the MCP list-comments tool.
 
 ```bash
 OWNER=$($GH repo view --json owner --jq .owner.login)
 REPO=$($GH repo view --json name --jq .name)
+HEAD_SHA=$(git rev-parse HEAD)   # gate on the commit we just pushed, not "any review"
+
 for i in $(seq 1 15); do
+  # PRIMARY gate: a walkthrough whose body references THIS head. Works for the
+  # first review (new walkthrough) AND every incremental one (same comment edited
+  # in place, its "between … and <HEAD>" line now naming $HEAD_SHA). A clean
+  # incremental pass produces ONLY this — no Review object, no inline comments.
+  head_reviewed=$($GH api "repos/$OWNER/$REPO/issues/$PR/comments" \
+    --jq "[.[] | select(.user.login==\"coderabbitai[bot]\"
+      and (.body | test(\"<!-- walkthrough_start -->|## Walkthrough|Summary by CodeRabbit|No actionable comments|Actionable comments posted\"))
+      and (.body | contains(\"$HEAD_SHA\")))] | length")
+  # FINDINGS on this head (filtered by commit_id so prior-review artifacts on an
+  # older sha don't masquerade as this review's output).
   inline_count=$($GH api "repos/$OWNER/$REPO/pulls/$PR/comments" \
-    --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | length')
+    --jq "[.[] | select(.user.login==\"coderabbitai[bot]\" and .commit_id==\"$HEAD_SHA\")] | length")
   review_count=$($GH api "repos/$OWNER/$REPO/pulls/$PR/reviews" \
-    --jq '[.[] | select(.user.login=="coderabbitai[bot]" and (.state=="CHANGES_REQUESTED" or .state=="APPROVED" or .state=="COMMENTED"))] | length')
-  # Zero-findings detection: CodeRabbit updates the walkthrough issue-comment with
-  # a completion marker rather than posting a Review. Without this check the loop
-  # would time out at 15 min on every clean PR.
-  walk_done=$($GH api "repos/$OWNER/$REPO/issues/$PR/comments" \
-    --jq '[.[] | select(.user.login=="coderabbitai[bot]" and
-      (.body | test("<!-- walkthrough_start -->|## Walkthrough|Summary by CodeRabbit|No actionable comments|Actionable comments posted")))] | length')
-  if [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ] || [ "$walk_done" -gt 0 ]; then
+    --jq "[.[] | select(.user.login==\"coderabbitai[bot]\" and .commit_id==\"$HEAD_SHA\")] | length")
+  if [ "$head_reviewed" -gt 0 ] || [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ]; then
     if [ "$inline_count" -gt 0 ] || [ "$review_count" -gt 0 ]; then
-      echo "CodeRabbit feedback received: $inline_count inline comments, $review_count finalized reviews"
+      echo "CodeRabbit feedback received for $HEAD_SHA: $inline_count inline comments, $review_count finalized reviews"
     else
-      echo "CodeRabbit review complete — no actionable comments"
+      echo "CodeRabbit review complete for $HEAD_SHA — no actionable comments"
     fi
     break
   fi
-  echo "Waiting for CodeRabbit ($i/15)..."
+  echo "Waiting for CodeRabbit to review $HEAD_SHA ($i/15)..."
   sleep 60
 done
 ```
 
-**Timeout (15 iterations, no observable completion signal):** CodeRabbit hasn't posted inline comments, a finalized review, or a walkthrough with a completion marker after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck, the service is down, or the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take. Print `"CodeRabbit didn't post a completion signal in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /slopstop:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
+> **Note on a clean incremental pass:** when `head_reviewed > 0` but `inline_count == 0 && review_count == 0`, that is the normal shape of a clean re-review — CodeRabbit reviewed `$HEAD_SHA` and found nothing, recorded only in the in-place-edited walkthrough (typically `"No actionable comments were generated in the recent review."`). Route it to the clean path (7-pre / 7d-clean); do NOT re-surface the prior review's findings as if they were new.
+
+**Timeout (15 iterations, no completion signal for `$HEAD_SHA`):** no walkthrough references the current head and no review/inline comment is stamped with it after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck/slow, the service is down, the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take, OR (common on re-polls) the incremental pass simply hasn't landed yet. Before declaring timeout, cross-check the walkthrough's `updated_at` and its `📥 Commits` line directly — an in-place edit naming `$HEAD_SHA` is completion even if the strict `contains` check lagged. Print `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /slopstop:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
 
 ## Step 7 — Verify, classify, and present CodeRabbit's proposals
 
 ### 7-pre. Zero-findings fast path
 
-If Step 6 broke on `walk_done` alone (i.e. `inline_count == 0` AND `review_count == 0`), skip the verification + decision tree (there's nothing to classify) and go straight to the **clean-verdict presentation** at 7d-clean below. Fetch only the walkthrough comment for the optional excerpt; skip the inline + review fetches.
+If Step 6 broke on `head_reviewed` alone (i.e. `inline_count == 0` AND `review_count == 0` for `$HEAD_SHA`), skip the verification + decision tree (there's nothing to classify) and go straight to the **clean-verdict presentation** at 7d-clean below. This is the common shape of a clean incremental re-review (the walkthrough was edited in place; no review/inline artifact was posted). Fetch only the walkthrough comment for the optional excerpt; skip the inline + review fetches.
 
 ### 7-full. Full-findings path
 
-Fetch the full set of CodeRabbit comments:
+Fetch CodeRabbit's findings **for the current head** — filter by `commit_id == $HEAD_SHA` so a prior review's artifacts on an older sha don't get re-presented as this review's output:
 
 ```bash
-# Inline review comments (the substantive line-level suggestions)
+# Inline review comments (the substantive line-level suggestions) — current head only
 $GH api "repos/$OWNER/$REPO/pulls/$PR/comments" \
-  --jq '[.[] | select(.user.login=="coderabbitai[bot]") | {path, line, body, diff_hunk}]'
+  --jq "[.[] | select(.user.login==\"coderabbitai[bot]\" and .commit_id==\"$HEAD_SHA\") | {path, line, body, diff_hunk}]"
 
-# Review summaries (state, body, timestamp)
+# Review summaries (state, body, timestamp) — current head only
 $GH api "repos/$OWNER/$REPO/pulls/$PR/reviews" \
-  --jq '[.[] | select(.user.login=="coderabbitai[bot]") | {state, body, submitted_at}]'
+  --jq "[.[] | select(.user.login==\"coderabbitai[bot]\" and .commit_id==\"$HEAD_SHA\") | {state, body, submitted_at}]"
 
-# Top-level walkthrough / first-impression comments
+# The walkthrough issue-comment (single comment, edited in place across reviews —
+# do NOT filter by commit_id; it has none. Take the coderabbit walkthrough whose
+# body references $HEAD_SHA).
 $GH api "repos/$OWNER/$REPO/issues/$PR/comments" \
-  --jq '[.[] | select(.user.login=="coderabbitai[bot]") | {body, created_at}]'
+  --jq "[.[] | select(.user.login==\"coderabbitai[bot]\" and (.body | contains(\"$HEAD_SHA\"))) | {body, updated_at}]"
 ```
+
+> **Caveat — unresolved findings from a PRIOR head.** Filtering by `commit_id == $HEAD_SHA` shows only what CodeRabbit flagged on the latest commit. Inline comments from an earlier review that you neither fixed nor resolved still hang on the PR under their old `commit_id` and won't appear in the filtered fetch. If the current head is clean but you want to double-check nothing earlier was dropped, re-run the inline fetch without the `commit_id` filter and look for unresolved (`in_reply_to_id == null`, not outdated) comments. Mention any you find rather than silently omitting them.
 
 For each **inline** comment, apply this process in order. Do NOT skip to classification on CodeRabbit's claim alone — CodeRabbit hallucinates, and a wrong-premise bucket is the most common categorization error.
 
@@ -416,4 +432,4 @@ CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 
   - **Step 5b (PR creation) fails**: print error, stop. The branch is already pushed; user can retry or open the PR via the GitHub UI.
   - **Step 5c (CodeRabbit alert comment) fails**: warn but continue. PR exists.
   - **Step 6 (poll timeout)**: not a failure — print and continue to Step 8 without Step 7 analysis.
-  - **Step 7 (analysis)**: zero-findings case (Step 6 broke on `walk_done` only) takes the 7-pre / 7d-clean fast path — clean ✅ verdict, no verification or classification work. Non-zero takes the 7-full path with verify → classify → present. Step 6 timeout also enters Step 7 but with empty fetch results; the 7d-clean output still renders (printing `"CodeRabbit didn't post a completion signal in 15 minutes"` instead of the clean-verdict body).
+  - **Step 7 (analysis)**: zero-findings case (Step 6 broke on `head_reviewed` only — `inline_count == 0 && review_count == 0` for `$HEAD_SHA`, the normal shape of a clean incremental re-review) takes the 7-pre / 7d-clean fast path — clean ✅ verdict, no verification or classification work. Non-zero takes the 7-full path with verify → classify → present. Step 6 timeout also enters Step 7 but with empty fetch results; the 7d-clean output still renders (printing `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 15 minutes"` instead of the clean-verdict body).
