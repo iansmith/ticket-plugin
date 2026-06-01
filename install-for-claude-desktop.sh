@@ -4,8 +4,10 @@
 #
 # Installs slopstop's commands into ~/.claude/commands/ for use in
 # Claude Desktop (which doesn't yet support /plugin install). They appear
-# as /slopstop-start, /slopstop-pause, /slopstop-update, /slopstop-archive (no
-# plugin namespace — Claude Desktop loads them as standalone slash commands).
+# as /slopstop-start, /slopstop-plan, /slopstop-pause, /slopstop-update,
+# /slopstop-document, /slopstop-archive, /slopstop-pr, /slopstop-merge, and
+# /slopstop-doc-sync (no plugin namespace — Claude Desktop loads them as
+# standalone slash commands).
 #
 # For Claude Code (CLI) users, the proper install is:
 #
