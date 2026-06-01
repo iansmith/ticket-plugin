@@ -12,13 +12,21 @@
 #                     Docker Desktop VM disk pressure accumulates from
 #                     repeated builds.
 #
+#   rag-dev-start   — start a persistent dev container using pgdata/ for
+#                     stable storage; port 7777 published to localhost.
+#                     Sources .harvester.toml for LINEAR_API_KEY if present.
+#   rag-dev-stop    — stop and remove the dev container (data stays in pgdata/).
+#   rag-dev-status  — show whether the dev container is running.
+#
 # Run from the repo root.
 
-DOCKER_DIR := docker/postgres-pgvector
-IMAGE_NAME := slopstop-rag
-GIT_SHA    := $(shell git rev-parse --short HEAD)
+DOCKER_DIR    := docker/postgres-pgvector
+IMAGE_NAME    := slopstop-rag
+GIT_SHA       := $(shell git rev-parse --short HEAD)
+DEV_CONTAINER := slopstop-rag-dev
+DEV_PORT      := 7777
 
-.PHONY: rag-build rag-run rag-clean rag-clean-deep
+.PHONY: rag-build rag-run rag-clean rag-clean-deep rag-dev-start rag-dev-stop rag-dev-status
 
 # Build context is the repo root (not $(DOCKER_DIR)/) so the Dockerfile can
 # COPY from rag-service/ alongside the docker/ assets. BILL-29 relocated the
@@ -42,3 +50,31 @@ rag-clean:
 
 rag-clean-deep: rag-clean
 	docker builder prune -a -f
+
+# Start a persistent dev container.  pgdata/ survives stop/start so the
+# indexed tickets accumulate across sessions.  Port $(DEV_PORT) is published
+# so host-side tools (search.sh, curl) can hit the service directly.
+# LINEAR_API_KEY is passed through when present so in-container harvester
+# invocations work without re-sourcing credentials.
+rag-dev-start: rag-build
+	@if docker ps -q --filter "name=^$(DEV_CONTAINER)$$" | grep -q .; then \
+	    echo "$(DEV_CONTAINER) already running"; \
+	else \
+	    bash -c '. ./.harvester.toml 2>/dev/null || true; \
+	        docker run -d \
+	            --name $(DEV_CONTAINER) \
+	            -v "$(CURDIR)/pgdata:/var/lib/postgresql" \
+	            -e APP_HOST=0.0.0.0 \
+	            -p $(DEV_PORT):$(DEV_PORT) \
+	            $${LINEAR_API_KEY:+-e "LINEAR_API_KEY=$$LINEAR_API_KEY"} \
+	            $(IMAGE_NAME):latest && \
+	        echo "$(DEV_CONTAINER) started — http://localhost:$(DEV_PORT)/healthz"'; \
+	fi
+
+rag-dev-stop:
+	docker stop $(DEV_CONTAINER) 2>/dev/null || true
+	docker rm   $(DEV_CONTAINER) 2>/dev/null || true
+
+rag-dev-status:
+	@docker ps --filter "name=^$(DEV_CONTAINER)$$" \
+	    --format "running  ports={{.Ports}}" | grep . || echo "not running"

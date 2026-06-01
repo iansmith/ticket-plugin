@@ -38,7 +38,7 @@
 #      The init-time copy under /docker-entrypoint-initdb.d/ was removed in
 #      BILL-17 — the entrypoint is the single application point now.
 #   4. Install a SIGTERM/SIGINT trap that forwards to uvicorn (graceful
-#      TERM) and postgres (pg_ctl -m fast stop), then exits 0.
+#      TERM) and postgres (SIGINT = fast stop, via stop_postgres()), then exits 0.
 #   5. Launch uvicorn in the background and block on it. If uvicorn exits
 #      on its own (crash), bring postgres down cleanly and exit with
 #      uvicorn's status code.
@@ -62,6 +62,21 @@ PG_READY_TIMEOUT_SEC="${PG_READY_TIMEOUT_SEC:-30}"
 SCHEMA_DIR="/docker-entrypoint-initdb.d/schema"
 
 UVICORN_PID=""
+POSTGRES_PID=""
+
+# pg_ctl refuses to run as root (which this entrypoint is). Instead send
+# SIGINT directly to the postmaster — that is exactly what pg_ctl -m fast
+# does (SIGINT = fast stop: roll back active transactions, checkpoint, exit
+# cleanly). Root can signal any process. docker-entrypoint.sh exec'd postgres,
+# so $POSTGRES_PID IS the postmaster PID and is a child of this shell.
+stop_postgres() {
+    if [ -n "$POSTGRES_PID" ]; then
+        echo "[entrypoint] sending SIGINT (fast stop) to postgres PID $POSTGRES_PID"
+        kill -INT "$POSTGRES_PID" 2>/dev/null || true
+        wait "$POSTGRES_PID" 2>/dev/null || true
+        echo "[entrypoint] postgres stopped"
+    fi
+}
 
 # ----------------------------------------------------------------------
 # SIGTERM / SIGINT handler: ordered shutdown, exit 0.
@@ -71,10 +86,7 @@ shutdown() {
     if [ -n "$UVICORN_PID" ]; then
         kill -TERM "$UVICORN_PID" 2>/dev/null || true
     fi
-    # pg_ctl talks to whichever postmaster owns $PGDATA, regardless of how
-    # postgres was launched. -m fast disconnects clients and skips
-    # checkpoint-on-shutdown waits; next start needs no recovery.
-    pg_ctl -D "$PGDATA" -m fast stop 2>/dev/null || true
+    stop_postgres
     if [ -n "$UVICORN_PID" ]; then
         wait "$UVICORN_PID" 2>/dev/null || true
     fi
@@ -87,6 +99,7 @@ trap shutdown SIGTERM SIGINT
 # ----------------------------------------------------------------------
 echo "[entrypoint] starting postgres via docker-entrypoint.sh postgres"
 docker-entrypoint.sh postgres &
+POSTGRES_PID=$!
 
 # ----------------------------------------------------------------------
 # Step 2 — wait for a real SELECT, not just for the listener.
@@ -149,6 +162,6 @@ wait "$UVICORN_PID"
 uv_status=$?
 
 echo "[entrypoint] uvicorn exited with status $uv_status; stopping postgres"
-pg_ctl -D "$PGDATA" -m fast stop 2>/dev/null || true
+stop_postgres
 
 exit "$uv_status"
