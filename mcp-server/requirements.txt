@@ -1,2 +1,6 @@
 mcp>=1.27
 httpx>=0.28
+# Pin transitive dep: python-multipart<0.0.18 has known high-severity DoS vulns
+# (GHSA-59g5-xgcq-4qw3, GHSA-mj87-hwqh-73pj, GHSA-pp6c-gr5w-3c5g, GHSA-wp53-j4wj-2cfg).
+# mcp's lower bound of >=0.0.9 allows them; this constraint keeps the resolver safe.
+python-multipart>=0.0.29

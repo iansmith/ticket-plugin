@@ -97,17 +97,21 @@ def search_tickets(
     try:
         resp = httpx.post(f"{RAG_URL}/search", json=body, timeout=30.0)
         resp.raise_for_status()
-    except httpx.ConnectError:
+    except httpx.ConnectError as exc:
         raise RuntimeError(
             f"Cannot reach RAG service at {RAG_URL}. "
             "Is the slopstop-rag-dev container running? "
             "Start it with: make rag-dev-start"
-        )
+        ) from exc
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(
             f"RAG service returned HTTP {exc.response.status_code}: "
             f"{exc.response.text[:200]}"
-        )
+        ) from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(
+            f"RAG request failed ({RAG_URL}/search): {exc}"
+        ) from exc
 
     return resp.json()["results"]
 
@@ -128,16 +132,20 @@ def rag_health() -> dict[str, str]:
         resp = httpx.get(f"{RAG_URL}/healthz", timeout=5.0)
         resp.raise_for_status()
         return resp.json()
-    except httpx.ConnectError:
+    except httpx.ConnectError as exc:
         raise RuntimeError(
             f"Cannot reach RAG service at {RAG_URL}. "
             "Start it with: make rag-dev-start"
-        )
+        ) from exc
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(
             f"RAG service returned HTTP {exc.response.status_code}: "
             f"{exc.response.text[:200]}"
-        )
+        ) from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(
+            f"RAG request failed ({RAG_URL}/healthz): {exc}"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

@@ -44,18 +44,51 @@ Or edit `.mcp.json` directly.
 
 ## Manual smoke test
 
-With the dev container running:
+With the dev container running, verify the server lists its tools and
+`rag_health` returns a healthy response:
 
 ```bash
-python3 -c "
-import subprocess, json, sys
+python3 - <<'PY'
+import json, subprocess
 
-req = json.dumps({
-    'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}
-})
-# FastMCP speaks stdio — pipe in an initialize + tools/list sequence
-"
+proc = subprocess.Popen(
+    ["python3", "mcp-server/server.py"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+)
+
+def rpc(msg):
+    proc.stdin.write(json.dumps(msg) + "\n")
+    proc.stdin.flush()
+    return json.loads(proc.stdout.readline())
+
+# 1. Initialize
+rpc({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+    "protocolVersion":"2024-11-05","capabilities":{},
+    "clientInfo":{"name":"smoke","version":"0"}}})
+proc.stdin.write(json.dumps({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}) + "\n")
+proc.stdin.flush()
+
+# 2. List tools
+tools = rpc({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
+print("tools:", [t["name"] for t in tools["result"]["tools"]])
+
+# 3. Call rag_health
+health = rpc({"jsonrpc":"2.0","id":3,"method":"tools/call",
+              "params":{"name":"rag_health","arguments":{}}})
+print("health:", health["result"]["content"][0]["text"])
+
+proc.terminate()
+PY
 ```
 
-Or just open a Claude Code session and ask:
+Expected output:
+```
+tools: ['search_tickets', 'rag_health']
+health: {
+  "postgres": "ok",
+  "schema": "ok"
+}
+```
+
+Or open a Claude Code session in this directory and ask:
 > "Call rag_health, then search_tickets for 'multicol nested overflow'."
