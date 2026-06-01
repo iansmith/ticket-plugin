@@ -154,9 +154,15 @@ def test_chunk_ticket_comment_subchunks_use_contiguous_seq_band():
 
 
 def test_chunk_ticket_no_chunk_exceeds_token_budget():
-    long_desc = " ".join(f"d{i}" for i in range(200))
+    # The description must exceed the cap (counted by _word_counter) so it
+    # actually splits — otherwise the "<= cap" assertion passes trivially and
+    # could never catch a broken budget. Sized off MAX_CHUNK_TOKENS like the
+    # comment-split fixtures above.
+    long_desc = " ".join(f"d{i}" for i in range(_common.MAX_CHUNK_TOKENS + 50))
     rows = _common.chunk_ticket(
         _ticket(description=long_desc, comments=[HarvestedComment(body="short")]),
         token_counter=_word_counter,
     )
+    desc_rows = [r for r in rows if r.kind == "description"]
+    assert len(desc_rows) >= 2  # the oversized description genuinely split
     assert all(_word_counter(r.text) <= _common.MAX_CHUNK_TOKENS for r in rows)
