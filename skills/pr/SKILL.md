@@ -1,5 +1,5 @@
 ---
-description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /slopstop:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 15 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
+description: Open a pull request for the active ticket's branch with pre-commit simplify + tests + CodeRabbit polling. Use /slopstop:pr to (1) run Claude Code's code-simplifier agent on uncommitted changes, (2) run the project's tests and refuse to commit on failures, (3) commit with a ticket-anchored message, (4) push and open a PR via GitHub MCP or gh CLI, (5) trigger CodeRabbit when the PR's base isn't the repo default, (6) poll for CodeRabbit feedback up to 20 minutes, and (7) categorize the suggestions for action. Stops after presenting — never auto-applies CodeRabbit's proposals.
 disable-model-invocation: true
 ---
 
@@ -240,15 +240,18 @@ OWNER=$($GH repo view --json owner --jq .owner.login)
 REPO=$($GH repo view --json name --jq .name)
 HEAD_SHA=$(git rev-parse HEAD)   # gate on the commit we just pushed, not "any review"
 
-for i in $(seq 1 15); do
+for i in $(seq 1 20); do
   # PRIMARY gate: a walkthrough whose body references THIS head. Works for the
   # first review (new walkthrough) AND every incremental one (same comment edited
   # in place, its "between … and <HEAD>" line now naming $HEAD_SHA). A clean
   # incremental pass produces ONLY this — no Review object, no inline comments.
+  # The "Currently processing" guard prevents a placeholder comment (which may
+  # already embed $HEAD_SHA) from being mistaken for a completed review.
   head_reviewed=$($GH api "repos/$OWNER/$REPO/issues/$PR/comments" \
     --jq "[.[] | select(.user.login==\"coderabbitai[bot]\"
       and (.body | test(\"<!-- walkthrough_start -->|## Walkthrough|Summary by CodeRabbit|No actionable comments|Actionable comments posted\"))
-      and (.body | contains(\"$HEAD_SHA\")))] | length")
+      and (.body | contains(\"$HEAD_SHA\"))
+      and (.body | test(\"[Cc]urrently processing\") | not))] | length")
   # FINDINGS on this head (filtered by commit_id so prior-review artifacts on an
   # older sha don't masquerade as this review's output).
   inline_count=$($GH api "repos/$OWNER/$REPO/pulls/$PR/comments" \
@@ -263,14 +266,14 @@ for i in $(seq 1 15); do
     fi
     break
   fi
-  echo "Waiting for CodeRabbit to review $HEAD_SHA ($i/15)..."
+  echo "Waiting for CodeRabbit to review $HEAD_SHA ($i/20)..."
   sleep 60
 done
 ```
 
 > **Note on a clean incremental pass:** when `head_reviewed > 0` but `inline_count == 0 && review_count == 0`, that is the normal shape of a clean re-review — CodeRabbit reviewed `$HEAD_SHA` and found nothing, recorded only in the in-place-edited walkthrough (typically `"No actionable comments were generated in the recent review."`). Route it to the clean path (7-pre / 7d-clean); do NOT re-surface the prior review's findings as if they were new.
 
-**Timeout (15 iterations, no completion signal for `$HEAD_SHA`):** no walkthrough references the current head and no review/inline comment is stamped with it after 15 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck/slow, the service is down, the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take, OR (common on re-polls) the incremental pass simply hasn't landed yet. Before declaring timeout, cross-check the walkthrough's `updated_at` and its `📥 Commits` line directly — an in-place edit naming `$HEAD_SHA` is completion even if the strict `contains` check lagged. Print `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 15 minutes. Check the PR page directly: $PR_URL. You can re-run /slopstop:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
+**Timeout (20 iterations, no completion signal for `$HEAD_SHA`):** no walkthrough references the current head and no review/inline comment is stamped with it after 20 minutes. Likely causes: CodeRabbit isn't installed on the repo, the webhook is stuck/slow, the service is down, the PR's base isn't covered by CodeRabbit's config and the `@coderabbitai review` mention in Step 5c didn't take, OR (common on re-polls) the incremental pass simply hasn't landed yet. Before declaring timeout, cross-check the walkthrough's `updated_at` and its `📥 Commits` line directly — an in-place edit naming `$HEAD_SHA` is completion even if the strict `contains` check lagged. Print `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 20 minutes. Check the PR page directly: $PR_URL. You can re-run /slopstop:pr later (with --no-simplify, since the commit is already made) to re-poll."` and skip to Step 7.
 
 ## Step 7 — Verify, classify, and present CodeRabbit's proposals
 
@@ -409,7 +412,7 @@ Commit:     <sha> [$TICKET] <subject>
 Simplify:   <"clean — no changes needed" | "applied N changes (user confirmed)" | "skipped (--no-simplify)" | "skipped (no uncommitted changes)" | "user aborted">
 Tests:      <"passed — N tests" | "skipped (--no-test)" | "skipped (user said skip)" | "failed but user said commit-anyway">
 Backend:    <"MCP" | "CLI ($GH)">
-CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 min" | "skipped (--no-poll)">
+CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 20 min" | "skipped (--no-poll)">
 ```
 
 ## Rules
@@ -419,7 +422,7 @@ CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 
 - **Never auto-apply CodeRabbit suggestions in Step 6.** Present only. The user explicitly opts in.
 - **All commits made by this skill are anchored to the active ticket** via `Refs: $TICKET` in the trailer. If the active ticket doesn't match the work being committed, the user should switch tickets first (`/slopstop:pause` → `/slopstop:start <OTHER>`) before invoking this skill.
 - **Simplify is a soft prerequisite.** If unavailable, the skill warns and asks the user to confirm continuing — not a hard stop.
-- **CodeRabbit is a soft prerequisite.** If the PR is created but CodeRabbit never responds within 15 minutes, that's not a failure — the skill prints a notice and stops without analysis. The PR is fine on its own.
+- **CodeRabbit is a soft prerequisite.** If the PR is created but CodeRabbit never responds within 20 minutes, that's not a failure — the skill prints a notice and stops without analysis. The PR is fine on its own.
 - **Failure handling per step:**
   - **Pre-flight fails** (no active ticket, on main branch, existing open PR): stop. No state changed.
   - **Step 1 (simplify) unavailable**: warn, ask user to continue or abort.
@@ -432,4 +435,4 @@ CodeRabbit: <"reviewed — $N comments categorized above" | "timed out after 15 
   - **Step 5b (PR creation) fails**: print error, stop. The branch is already pushed; user can retry or open the PR via the GitHub UI.
   - **Step 5c (CodeRabbit alert comment) fails**: warn but continue. PR exists.
   - **Step 6 (poll timeout)**: not a failure — print and continue to Step 8 without Step 7 analysis.
-  - **Step 7 (analysis)**: zero-findings case (Step 6 broke on `head_reviewed` only — `inline_count == 0 && review_count == 0` for `$HEAD_SHA`, the normal shape of a clean incremental re-review) takes the 7-pre / 7d-clean fast path — clean ✅ verdict, no verification or classification work. Non-zero takes the 7-full path with verify → classify → present. Step 6 timeout also enters Step 7 but with empty fetch results; the 7d-clean output still renders (printing `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 15 minutes"` instead of the clean-verdict body).
+  - **Step 7 (analysis)**: zero-findings case (Step 6 broke on `head_reviewed` only — `inline_count == 0 && review_count == 0` for `$HEAD_SHA`, the normal shape of a clean incremental re-review) takes the 7-pre / 7d-clean fast path — clean ✅ verdict, no verification or classification work. Non-zero takes the 7-full path with verify → classify → present. Step 6 timeout also enters Step 7 but with empty fetch results; the 7d-clean output still renders (printing `"CodeRabbit didn't post a completion signal for $HEAD_SHA in 20 minutes"` instead of the clean-verdict body).
