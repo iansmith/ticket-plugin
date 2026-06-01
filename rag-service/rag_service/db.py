@@ -120,6 +120,9 @@ def _build_knn_sql(
     if f.ticket_id:
         where_clauses.append("ticket_id = %s")
         params.append(f.ticket_id)
+    if f.project:
+        where_clauses.append("project = %s")
+        params.append(f.project)
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 

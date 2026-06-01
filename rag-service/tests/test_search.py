@@ -154,7 +154,7 @@ def test_search_passes_filters_to_db(client, fake_db):
     }
     r = client.post("/search", json=payload)
     assert r.status_code == 200
-    assert captured["filters"].model_dump() == payload["filters"]
+    assert captured["filters"].model_dump() == {**payload["filters"], "project": None}
 
 
 # ---------------------------------------------------------------------------
