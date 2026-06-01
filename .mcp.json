@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "slopstop-rag": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["mcp-server/server.py"],
+      "env": {
+        "RAG_SERVICE_URL": "http://localhost:7777"
+      }
+    }
+  }
+}
