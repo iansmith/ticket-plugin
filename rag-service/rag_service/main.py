@@ -100,9 +100,9 @@ def search_note(req: SearchRequest) -> dict:
     and timestamp.
     """
     notes_dir = _search_notes_dir()
-    notes_dir.mkdir(exist_ok=True)
+    notes_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc)
-    fname = notes_dir / f"search_note-{ts.strftime('%Y%m%d-%H%M%S')}.txt"
+    fname = notes_dir / f"search_note-{ts.strftime('%Y%m%d-%H%M%S-%f')}.txt"
     fname.write_text(
         f"timestamp: {ts.isoformat()}\n"
         f"project:   {req.project.strip() or '(all)'}\n"

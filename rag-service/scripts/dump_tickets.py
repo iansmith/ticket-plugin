@@ -20,7 +20,18 @@ from rag_service.harvesters.linear import _build_real_client, parse_identifier
 
 
 def main() -> int:
-    prefix, lo, hi = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+    if len(sys.argv) != 4:
+        print("Usage: python3 -m scripts.dump_tickets <PREFIX> <LO> <HI>", file=sys.stderr)
+        return 1
+    try:
+        lo, hi = int(sys.argv[2]), int(sys.argv[3])
+    except ValueError as e:
+        print(f"Error: LO and HI must be integers: {e}", file=sys.stderr)
+        return 1
+    if lo > hi:
+        print(f"Error: LO ({lo}) must be ≤ HI ({hi})", file=sys.stderr)
+        return 1
+    prefix = sys.argv[1]
     parse_identifier(f"{prefix}-{lo}")  # validate prefix is well-formed once
     client = _build_real_client()
     out = []

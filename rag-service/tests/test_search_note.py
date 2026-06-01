@@ -162,10 +162,9 @@ class TestSearchNote:
             )
             assert r.status_code == 201
         files = list(tmp_path.glob("search_note-*.txt"))
-        # At worst two calls land in the same second and clobber — but 3 files
-        # in 3 sequential calls in the same process is reliable in practice.
-        # We check at least 1 file exists; file count is not the contract.
-        assert len(files) >= 1
+        # Microsecond-precision filenames make same-timestamp collisions
+        # effectively impossible; all 3 calls must produce distinct files.
+        assert len(files) == 3
 
     def test_missing_query_rejected_with_422(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("RAG_SERVICE_SEARCH_NOTES_DIR", str(tmp_path))
