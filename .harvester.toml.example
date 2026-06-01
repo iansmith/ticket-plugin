@@ -1,33 +1,36 @@
 # Harvester credentials — template (BILL-37).
 #
-# Copy this file to `.harvester.env` (which is GITIGNORED) and fill in real
-# tokens, then `source .harvester.env` before running a harvester:
+# Copy this file to `.harvester.toml` (which is GITIGNORED) and fill in real
+# tokens.  The harvesters read this file automatically (TOML format, parsed via
+# tomllib) and also accept the same keys as environment variables — env wins:
 #
-#     cp .harvester.env.example .harvester.env
-#     # edit .harvester.env, paste your token(s)
-#     source .harvester.env
-#     python -m rag_service.harvesters.linear sync-ticket LOU-102
+#     cp .harvester.toml.example .harvester.toml
+#     # edit .harvester.toml, paste your token(s)
 #
-# Or set these vars directly in the container / cron environment instead of
-# using a file. The harvesters read ONLY from the environment — this file is a
-# convenience, not a config the code parses. NEVER commit `.harvester.env`.
+# Alternatively set the env vars directly in the container / cron environment
+# (e.g. `export LINEAR_API_KEY=lin_api_...`) and skip the file entirely.
+# The Makefile `rag-dev-start` target reads .harvester.toml automatically.
 #
 # These are READ-ONLY credentials: the harvesters only fetch tickets, never
 # write to the source. Grant the minimum (read) scope. See
 # design/ticket-rag.md § Harvester credentials for the exact click-through
 # steps and scopes.
+#
+# NEVER commit `.harvester.toml`.
 
 # --- Linear (the BILL-37 harvester) -----------------------------------------
 # Personal API key, scope = Read. Workspace-scoped settings URL (the page is
 # buried in Linear's UI — swap <workspace> for your slug):
 #   https://linear.app/<workspace>/settings/account/security
 # Raw key in the Authorization header (NO "Bearer " prefix).
-export LINEAR_API_KEY="lin_api_xxxxxxxxxxxxxxxxxxxxxxxx"
+[linear]
+api_key = "lin_api_xxxxxxxxxxxxxxxxxxxxxxxx"
 
 # --- JIRA (harvester not built yet; documented for parity) ------------------
 # Scoped API token (read:jira-work [+ read:jira-user]) from
 #   https://id.atlassian.com/manage-profile/security/api-tokens
 # JIRA uses HTTP Basic auth: <email>:<token>.
-# export JIRA_EMAIL="you@example.com"
-# export JIRA_API_TOKEN="xxxxxxxxxxxxxxxxxxxxxxxx"
-# export JIRA_BASE_URL="https://your-site.atlassian.net"
+# [jira]
+# email     = "you@example.com"
+# api_token = "xxxxxxxxxxxxxxxxxxxxxxxx"
+# base_url  = "https://your-site.atlassian.net"

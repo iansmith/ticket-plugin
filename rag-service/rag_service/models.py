@@ -18,23 +18,29 @@ class SearchFilters(BaseModel):
     "no constraint on this dimension" (default = all).
 
     Mirrors design/ticket-rag.md: `source`/`provenance`/`kind` are lists
-    (match-any), `ticket_id` is a single string (exact match).
+    (match-any), `ticket_id`/`project` are single strings (exact match).
     """
 
     source: list[str] | None = None
     provenance: list[str] | None = None
     kind: list[str] | None = None
     ticket_id: str | None = None
+    project: str | None = None
 
 
 class SearchRequest(BaseModel):
-    """POST /search request body.
+    """POST /search (and POST /search_note) request body.
 
-    `query` is required — omitting it triggers FastAPI's 422 validation
-    rejection (the documented contract). `k` caps the RESPONSE length;
-    Stage-1 dense retrieval is separately capped at db.STAGE1_TOP_K.
+    `project` — if non-empty after stripping whitespace, restricts results to
+    that project only (e.g. "LOU", "BILL", "PLTF"). Case-insensitive: the
+    endpoint normalises to uppercase before filtering. Empty string means all
+    projects (default).
+
+    `query` is required. `k` caps the RESPONSE length; Stage-1 dense
+    retrieval is separately capped at db.STAGE1_TOP_K.
     """
 
+    project: str = ""
     query: str
     k: int = 10
     filters: SearchFilters | None = None

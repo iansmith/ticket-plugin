@@ -663,6 +663,7 @@ def embed_rows(rows: list[ChunkRow], embedder: Embedder) -> list[ChunkRow]:
 _INSERT_COLUMNS = (
     "source",
     "ticket_id",
+    "project",
     "provenance",
     "kind",
     "seq",
@@ -675,6 +676,16 @@ _INSERT_COLUMNS = (
     "ticket_refs",
     "raw_meta",
 )
+
+# Regex to extract the project prefix from a standard ticket identifier
+# ('LOU-102' -> 'LOU', 'PLTF-12' -> 'PLTF').  Returns None for GitHub-style
+# identifiers ('iansmith/slopstop#7') which have no dash-delimited prefix.
+_PROJECT_RE = re.compile(r"^([A-Z][A-Z0-9]+)-\d+$")
+
+
+def _project_from_ticket_id(ticket_id: str) -> str | None:
+    m = _PROJECT_RE.match(ticket_id)
+    return m.group(1) if m else None
 
 
 def write_ticket(
@@ -748,6 +759,7 @@ def write_ticket(
                         # the guard above already proved they're equal.
                         source,
                         ticket_id,
+                        _project_from_ticket_id(ticket_id),
                         provenance,
                         row.kind,
                         row.seq,

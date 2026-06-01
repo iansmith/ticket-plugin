@@ -268,8 +268,8 @@ def test_sync_ticket_assigns_seq_bands():
         "LOU-102", client=client, conn=conn, embedder=_FakeEmbedder(),
         token_counter=_word_counter,
     )
-    # seq is the 5th INSERT column (source,ticket_id,provenance,kind,seq,...).
-    seqs = sorted(params[4] for params in conn.inserts)
+    # seq is the 6th INSERT column (source,ticket_id,project,provenance,kind,seq,...).
+    seqs = sorted(params[5] for params in conn.inserts)
     assert seqs == [0, COMMENT_SEQ_BASE]
 
 

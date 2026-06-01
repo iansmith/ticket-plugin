@@ -133,6 +133,14 @@ COPY --chmod=0755 docker/postgres-pgvector/entrypoint.sh /entrypoint.sh
 # this COPY layer rebuilds.
 COPY rag-service/rag_service/ /app/rag_service/
 
+# Dev/ops utility scripts (fetch-only ticket dumper, etc.). Run as
+# `python3 -m scripts.<name>` from /app (namespace package — no __init__.py
+# needed). These are operator tools, not part of the service runtime, so they
+# sit as the last cacheable layer where edits don't invalidate anything above.
+COPY rag-service/scripts/ /app/scripts/
+
+ENV PYTHONPATH=/app
+
 EXPOSE 5432
 EXPOSE 7777
 
