@@ -133,6 +133,8 @@ COPY --chmod=0755 docker/postgres-pgvector/entrypoint.sh /entrypoint.sh
 # this COPY layer rebuilds.
 COPY rag-service/rag_service/ /app/rag_service/
 
+ENV PYTHONPATH=/app
+
 EXPOSE 5432
 EXPOSE 7777
 

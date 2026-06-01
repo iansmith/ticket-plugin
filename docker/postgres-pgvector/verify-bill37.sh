@@ -100,7 +100,7 @@ fi
 docker run -d \
     --name "$CONTAINER" \
     -v "$DATA_DIR:/var/lib/postgresql" \
-    "${DOCKER_ENV[@]}" \
+    ${DOCKER_ENV[@]+"${DOCKER_ENV[@]}"} \
     "$IMAGE" >/dev/null 2>&1
 
 check "fresh-volume boot: /healthz postgres:ok AND schema:ok within 30s" \
